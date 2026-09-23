@@ -39,7 +39,7 @@ jobs:
           python-version: '3.10'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Install required SDK/NDK & verify
         run: |
