@@ -120,6 +120,7 @@
     <string name="common_not_set">未设置</string>
     <string name="common_set">已设置</string>
     <string name="common_vod">点播</string>
+    <string name="common_tmdb">TMDB</string>
     <string name="common_live">直播</string>
     <string name="common_off">关闭</string>
     <string name="common_on">开启</string>
@@ -428,6 +429,25 @@
     <string name="config_current_vod_source">当前点播源:%1$s</string>
     <string name="config_live_source_hint">支持配置 JSON / m3u / txt 直播源</string>
     <string name="config_source_disabled_tag">已禁用</string>
+
+    <string name="tmdb_enable">启用 TMDB</string>
+    <string name="tmdb_poster_style">海报展示样式</string>
+    <string name="tmdb_poster_style_fixed">固定</string>
+    <string name="tmdb_poster_style_random">随机</string>
+    <string name="tmdb_poster_style_roll">轮播</string>
+    <string name="tmdb_api_key">API Key</string>
+    <string name="tmdb_api_base">API 代理地址</string>
+    <string name="tmdb_image_base">图片代理地址</string>
+    <string name="tmdb_field_optional">选填，未填则使用默认</string>
+    <string name="tmdb_api_base_invalid">地址无效,请填写 http/https 开头的完整地址</string>
+    <string name="tmdb_test_api">测试接口</string>
+    <string name="tmdb_test_image">测试图片</string>
+    <string name="tmdb_test_running">测试中…</string>
+    <string name="tmdb_test_api_ok">接口测试通过</string>
+    <string name="tmdb_test_api_fail">接口测试失败，请检查 API Key 与代理地址</string>
+    <string name="tmdb_test_image_ok">图片测试通过</string>
+    <string name="tmdb_test_image_fail">图片测试失败，请检查图片代理地址</string>
+    <string name="tmdb_key_required">请先填写 API Key</string>
     <string name="config_pick_local">从本地选择</string>
     <string name="config_field_name">名字</string>
     <string name="config_field_url">链接</string>
@@ -447,6 +467,7 @@
     <string name="settings_history_limit_value">%1$d条</string>
     <string name="settings_clear_cache">清除缓存</string>
     <string name="settings_clear_cache_subtitle">清理应用的使用缓存</string>
+    <string name="settings_clear_cache_confirm_text">将清理图片与播放缓存，并连带清除 TMDB 海报缓存，下次浏览时重新获取。</string>
     <string name="settings_doh_subtitle">安全DNS</string>
     <string name="settings_about">关于</string>
     <string name="settings_about_subtitle">查看详细信息</string>
@@ -462,6 +483,8 @@
     <string name="settings_incognito">无痕模式</string>
     <string name="settings_gesture_disable">禁用手势控制</string>
     <string name="settings_gesture_disable_subtitle">开启后将禁用手势控制亮度和音量</string>
+    <string name="settings_hide_status_bar">隐藏状态栏</string>
+    <string name="settings_hide_status_bar_subtitle">开启后封面延伸至屏幕顶部</string>
     <string name="settings_nav_animation_disable">禁用导航动画</string>
     <string name="settings_nav_animation_disable_subtitle">开启后将禁用底部导航的侧滑动画</string>
     <string name="settings_nav_live_hidden">导航栏隐藏直播</string>
@@ -511,6 +534,9 @@
     <string name="home_load_failed">首页加载失败，请检查网络后重试</string>
     <string name="home_load_partial_timeout">部分内容加载超时，可下拉刷新重试</string>
     <string name="detail_rating">评分 %1$s</string>
+    <string name="tmdb_meta_title">TMDB 元数据</string>
+    <string name="tmdb_rating">评分 %1$s / 10</string>
+    <string name="detail_cast">演员阵容</string>
     <string name="detail_content_not_ready">内容还没加载好</string>
     <string name="detail_no_playable_content">暂无可播放的内容</string>
     <string name="filter_title">筛选 · %1$s</string>

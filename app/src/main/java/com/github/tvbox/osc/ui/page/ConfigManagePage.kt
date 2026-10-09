@@ -56,6 +56,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
@@ -68,7 +70,6 @@ import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.SegmentOption
-import com.github.tvbox.osc.ui.components.SegmentStyle
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
@@ -80,6 +81,7 @@ import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassSurface
 import com.github.tvbox.osc.ui.theme.cardContainer
 import com.github.tvbox.osc.util.HistoryHelper
+import com.github.tvbox.osc.util.TmdbApi
 
 private fun badgeText(name: String, url: String, emptyText: String): String = when {
     name.isNotEmpty() -> name
@@ -91,7 +93,11 @@ private fun badgeText(name: String, url: String, emptyText: String): String = wh
 @Composable
 fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     val context = LocalContext.current
-    val vm: ConfigManageViewModel = viewModel()
+    val vm: ConfigManageViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer { ConfigManageViewModel { TmdbApi.DefaultTmdbClient() } }
+        },
+    )
     var mode by rememberSaveable { mutableStateOf(ConfigMode.Vod) }
     var addDialogOpen by remember { mutableStateOf(false) }
     var repoSheetOpen by remember { mutableStateOf(false) }
@@ -106,8 +112,11 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     val manageMode by vm.manageMode.collectAsState()
     val editTarget by vm.editTarget.collectAsState()
     val toastEvent by vm.toastEvent.collectAsState()
+    val tmdbState by vm.tmdbState().collectAsState()
+    val tmdbTesting by vm.tmdbTesting().collectAsState()
 
     val isVod = mode == ConfigMode.Vod
+    val isTmdb = mode == ConfigMode.Tmdb
     val currentItems = if (isVod) vodItems else liveItems
 
     LaunchedEffect(toastEvent) {
@@ -124,7 +133,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
 
     BackHandler(enabled = manageMode) { vm.exitManageMode() }
 
-    val canSwitchRepo = if (isVod) {
+    val canSwitchRepo = !isTmdb && if (isVod) {
         HistoryHelper.isApiLineUrl(activeUrl)
     } else {
         ApiConfig.get().isLiveApiLineMode() && HistoryHelper.isLiveApiLineUrl(liveActiveUrl)
@@ -142,19 +151,6 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
             noSourceText,
         )
     }
-    val followText = stringResource(R.string.live_follow_vod_source)
-    val liveBadge = remember(liveItems, liveActiveUrl, liveFollow, noSourceText, followText) {
-        if (liveFollow) {
-            followText
-        } else {
-            badgeText(
-                liveItems.firstOrNull { parseSubscribe(it).url == liveActiveUrl }?.let { parseSubscribe(it).name }.orEmpty(),
-                liveActiveUrl,
-                noSourceText,
-            )
-        }
-    }
-
     AppTopBarScaffold(
         titleContent = {
             Text(
@@ -172,7 +168,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         },
         actions = {
             AnimatedContent(
-                targetState = manageMode && currentItems.isNotEmpty(),
+                targetState = manageMode && currentItems.isNotEmpty() && !isTmdb,
                 transitionSpec = {
                     (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
                         scaleIn(initialScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
@@ -195,7 +191,11 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                             iconRes = R.drawable.ic_delete,
                             contentDescription = stringResource(R.string.common_delete),
                             enabled = selected.isNotEmpty(),
-                            onClick = { vm.deleteSelected(isVod) },
+                            onClick = {
+                                vm.deleteSelected(
+                                    if (isVod) SubscribeMode.Vod else SubscribeMode.Live,
+                                )
+                            },
                         )
                     }
                 } else {
@@ -203,22 +203,24 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (canSwitchRepo) {
+                        if (!isTmdb) {
+                            if (canSwitchRepo) {
+                                TopBarActionBox(
+                                    iconRes = R.drawable.ic_switch_repo,
+                                    contentDescription = stringResource(R.string.config_switch_repo),
+                                    onClick = { repoSheetOpen = true },
+                                )
+                            }
                             TopBarActionBox(
-                                iconRes = R.drawable.ic_switch_repo,
-                                contentDescription = stringResource(R.string.config_switch_repo),
-                                onClick = { repoSheetOpen = true },
+                                iconRes = R.drawable.ic_subscribe_add,
+                                contentDescription = if (isVod) {
+                                    stringResource(R.string.config_add_subscribe)
+                                } else {
+                                    stringResource(R.string.config_add_live_source)
+                                },
+                                onClick = { addDialogOpen = true },
                             )
                         }
-                        TopBarActionBox(
-                            iconRes = R.drawable.ic_subscribe_add,
-                            contentDescription = if (isVod) {
-                                stringResource(R.string.config_add_subscribe)
-                            } else {
-                                stringResource(R.string.config_add_live_source)
-                            },
-                            onClick = { addDialogOpen = true },
-                        )
                     }
                 }
             }
@@ -227,13 +229,25 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize()) {
             CapsuleSegmentedButton(
                 options = listOf(
-                    SegmentOption(label = stringResource(R.string.common_vod), value = ConfigMode.Vod, badge = vodBadge),
-                    SegmentOption(label = stringResource(R.string.common_live), value = ConfigMode.Live, badge = liveBadge),
+                    SegmentOption(
+                        label = stringResource(R.string.common_vod),
+                        value = ConfigMode.Vod,
+                        iconPainter = painterResource(R.drawable.ic_config_vod),
+                    ),
+                    SegmentOption(
+                        label = stringResource(R.string.common_tmdb),
+                        value = ConfigMode.Tmdb,
+                        iconPainter = painterResource(R.drawable.ic_config_tmdb),
+                    ),
+                    SegmentOption(
+                        label = stringResource(R.string.common_live),
+                        value = ConfigMode.Live,
+                        iconPainter = painterResource(R.drawable.ic_config_live),
+                    ),
                 ),
                 selectedValue = mode,
                 onOptionSelected = { mode = it },
-                style = SegmentStyle.Track,
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceBright,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, top = topPad + 8.dp),
@@ -241,7 +255,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
             AnimatedContent(
                 targetState = mode,
                 transitionSpec = {
-                    val toRight = targetState == ConfigMode.Live
+                    val toRight = targetState.ordinal > initialState.ordinal
                     (
                         slideInHorizontally(spring(stiffness = Spring.StiffnessMedium)) { full ->
                             if (toRight) full / 4 else -full / 4
@@ -256,7 +270,13 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
             ) { m ->
                 val mIsVod = m == ConfigMode.Vod
                 val mItems = if (mIsVod) vodItems else liveItems
-                if (mItems.isEmpty()) {
+                if (m == ConfigMode.Tmdb) {
+                    ConfigTmdbScreen(
+                        state = tmdbState,
+                        actions = remember(vm) { vm.tmdbActions() },
+                        testing = tmdbTesting,
+                    )
+                } else if (mItems.isEmpty()) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         if (!mIsVod) {
                             FollowVodCard(
@@ -267,7 +287,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                                     stringResource(R.string.config_current_vod_source, vodBadge)
                                 },
                                 onFollow = { vm.followLiveNow() },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 12.dp),
                             )
                         }
                         LoadStateBox(
@@ -295,7 +315,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             end = 16.dp,
-                            top = 12.dp,
+                            top = 24.dp,
                             bottom = 8.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp),

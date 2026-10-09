@@ -1,14 +1,19 @@
 package com.github.tvbox.osc.ui.activity
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -38,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,12 +52,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.theme.filterChipColors
+import com.github.tvbox.osc.util.TmdbApi
+import com.github.tvbox.osc.util.TmdbPoster
 import kotlinx.coroutines.launch
+
+private val EpisodeThumbWidth = 180.dp
 
 @Composable
 internal fun EpisodeRow(
@@ -108,6 +120,10 @@ internal fun EpisodeRow(
                 listState.scrollToItem(minOf(playIndex, episodes.size - 1))
             }
         }
+        val seasonHint = remember(info.name, currentFlag) {
+            TmdbApi.parseSeasonHint(info.name) ?: TmdbApi.parseSeasonHint(currentFlag)
+        }
+        val episodeMeta = rememberEpisodeMeta(info.name, info.year, episodes.size, seasonHint)
         LazyRow(
             state = listState,
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -116,6 +132,9 @@ internal fun EpisodeRow(
             itemsIndexed(episodes) { index, ep ->
                 EpisodeCard(
                     name = ep.name ?: (index + 1).toString(),
+                    episodeNumber = index + 1,
+                    thumbEnabled = episodeMeta != null,
+                    episode = episodeMeta?.getOrNull(index),
                     selected = index == playIndex,
                     onClick = { vm.onEpisodeClick(index) },
                 )
@@ -125,18 +144,102 @@ internal fun EpisodeRow(
 }
 
 @Composable
-private fun EpisodeCard(name: String, selected: Boolean, onClick: () -> Unit) {
-    DetailItemCard(
-        selected = selected,
-        onClick = onClick,
+private fun rememberEpisodeMeta(
+    name: String?,
+    year: Int,
+    episodeCount: Int,
+    seasonHint: Int?,
+): List<TmdbApi.TmdbEpisode>? {
+    if (name.isNullOrBlank() || episodeCount <= 0) return null
+    val epoch by TmdbPoster.configEpoch.collectAsState()
+    var meta by remember(name, episodeCount, seasonHint, epoch) {
+        mutableStateOf(TmdbPoster.cachedEpisodeMeta(name, episodeCount, seasonHint))
+    }
+    LaunchedEffect(name, episodeCount, seasonHint, epoch) {
+        if (meta == null) meta = TmdbPoster.resolveEpisodeMeta(name, year, episodeCount, seasonHint)
+    }
+    return meta
+}
+
+@Composable
+private fun EpisodeCard(
+    name: String,
+    episodeNumber: Int,
+    thumbEnabled: Boolean,
+    episode: TmdbApi.TmdbEpisode?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    if (!thumbEnabled) {
+        DetailItemCard(
+            selected = selected,
+            onClick = onClick,
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        return
+    }
+    val stillPath = episode?.stillPath.orEmpty()
+    val title = episode?.name?.takeIf { it.isNotBlank() } ?: name
+    Column(
+        modifier = Modifier
+            .width(EpisodeThumbWidth)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(detailCardColor())
+                .then(
+                    if (selected) {
+                        Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+            if (stillPath.isNotEmpty()) {
+                AsyncImage(
+                    model = TmdbPoster.stillUrl(stillPath),
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Text(
+                text = episodeNumber.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 7.dp, vertical = 1.dp),
+            )
+        }
         Text(
-            text = name,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
         )
     }
 }

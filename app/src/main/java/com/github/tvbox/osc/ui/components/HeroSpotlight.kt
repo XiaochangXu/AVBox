@@ -89,18 +89,30 @@ fun HeroSpotlight(
     val current = videos[pagerState.currentPage % count]
     val scope = rememberCoroutineScope()
     var pendingPic by remember { mutableStateOf<String?>(null) }
+    var settledPage by remember { mutableStateOf(pagerState.settledPage) }
 
     LaunchedEffect(pagerState, videos) {
-        snapshotFlow { pagerState.settledPage }.collect { page ->
-            val pic = videos[page % count].pic
-            val hit = HomeBackdrop.has(pic)
-            LOG.i("echo-home-backdrop settle page=$page hit=$hit pic=${pic.orEmpty().takeLast(24)}")
-            onPosterPic(pic.orEmpty())
-            if (hit) {
-                onBackdropSeed(HomeBackdrop.seedOf(pic))
-            } else {
-                pendingPic = pic
-            }
+        snapshotFlow { pagerState.settledPage }.collect { settledPage = it }
+    }
+
+    val settledVideo = videos[settledPage % count]
+    val settledPic = settledVideo.pic
+    val settledUrl = tmdbPosterUrl(
+        settledVideo.name,
+        settledVideo.year,
+        settledVideo.sourceKey,
+        preferLarge = true,
+        cacheOnly = true,
+    ) ?: settledPic
+
+    LaunchedEffect(settledPage, settledUrl) {
+        val hit = HomeBackdrop.has(settledPic)
+        LOG.i("echo-home-backdrop settle page=$settledPage hit=$hit pic=${settledPic.orEmpty().takeLast(24)}")
+        onPosterPic(settledUrl.orEmpty())
+        if (hit) {
+            onBackdropSeed(HomeBackdrop.seedOf(settledPic))
+        } else {
+            pendingPic = settledPic
         }
     }
 
@@ -146,6 +158,9 @@ fun HeroSpotlight(
                     pic = video.pic,
                     modifier = Modifier.fillMaxSize(),
                     preferLarge = true,
+                    year = video.year,
+                    sourceKey = video.sourceKey,
+                    tmdbCacheOnly = true,
                     onImage = { image ->
                         val pic = video.pic
                         if (!HomeBackdrop.has(pic)) {

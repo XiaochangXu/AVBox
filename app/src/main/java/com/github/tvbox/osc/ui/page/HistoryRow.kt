@@ -81,6 +81,9 @@ internal fun HistoryRow(
                 VodPoster(
                     name = item.name,
                     pic = item.pic,
+                    year = item.year,
+                    sourceKey = item.sourceKey,
+                    tmdbCacheOnly = true,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(8.dp)),

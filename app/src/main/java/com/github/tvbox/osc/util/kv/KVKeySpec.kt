@@ -63,6 +63,9 @@ class KVKeySpec : KVDecoder.TypeRegistry {
             register(HawkConfig.HOME_HOT_DAY, "")
             register(HawkConfig.THUNDER_IMEI, "")
             register(HawkConfig.THUNDER_MAC, "")
+            register(HawkConfig.TMDB_API_KEY, "")
+            register(HawkConfig.TMDB_API_BASE, "")
+            register(HawkConfig.TMDB_IMAGE_BASE, "")
 
             register(HawkConfig.PLAY_TYPE, 0)
             register(HawkConfig.PLAY_RENDER, 0)
@@ -78,6 +81,7 @@ class KVKeySpec : KVDecoder.TypeRegistry {
             register(HawkConfig.LIVE_GROUP_INDEX, 0)
             register(HawkConfig.SEARCH_THREADS, 0)
             register(HawkConfig.LONG_PRESS_SPEED, 0)
+            register(HawkConfig.TMDB_POSTER_STYLE, 0)
             register(HawkConfig.BUFFER_TIMES, 0)
             register(HawkConfig.PRELOAD_DURATION, 0)
             register(HawkConfig.EXO_CACHE_SIZE_MB, 0)
@@ -98,6 +102,7 @@ class KVKeySpec : KVDecoder.TypeRegistry {
             register(HawkConfig.AUTO_SWITCH_LINE, false)
             register(HawkConfig.DEFAULT_LOAD_LIVE, false)
             register(HawkConfig.INCOGNITO, false)
+            register(HawkConfig.HIDE_STATUS_BAR, false)
             register(HawkConfig.GESTURE_CONTROL_DISABLED, false)
             register(HawkConfig.NAV_ANIMATION_DISABLED, false)
             register(HawkConfig.NAV_LIVE_HIDDEN, false)
@@ -115,6 +120,7 @@ class KVKeySpec : KVDecoder.TypeRegistry {
             register(HawkConfig.LIQUID_GLASS_CONTROLS, false)
             register(HawkConfig.LIQUID_GLASS_DISPERSION, false)
             register(HawkConfig.THEME_PURE_BLACK, false)
+            register(HawkConfig.TMDB_ENABLE, false)
 
             register(HawkConfig.LIQUID_GLASS_BLUR, 0f)
             register(HawkConfig.LIQUID_GLASS_DISTORTION, 0f)

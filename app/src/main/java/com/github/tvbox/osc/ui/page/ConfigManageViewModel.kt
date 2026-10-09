@@ -1,5 +1,7 @@
 package com.github.tvbox.osc.ui.page
 
+import androidx.annotation.StringRes
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
@@ -11,18 +13,67 @@ import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
+import com.github.tvbox.osc.util.TmdbApi
+import com.github.tvbox.osc.util.TmdbPoster
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class SubscribeSource(val name: String, val url: String)
 
 data class PendingSwitch(val item: SubscribeSource, val vod: Boolean)
 
-enum class ConfigMode { Vod, Live }
+enum class ConfigMode { Vod, Tmdb, Live }
+
+enum class SubscribeMode { Vod, Live }
+
+enum class TmdbPosterStyle {
+    Fixed, Random, Roll;
+
+    @StringRes
+    fun labelRes(): Int = when (this) {
+        Fixed -> R.string.tmdb_poster_style_fixed
+        Random -> R.string.tmdb_poster_style_random
+        Roll -> R.string.tmdb_poster_style_roll
+    }
+
+    companion object {
+        fun of(value: Int): TmdbPosterStyle = entries.getOrElse(value) { Fixed }
+    }
+}
+
+@Immutable
+data class ConfigTmdbState(
+    val enabled: Boolean,
+    val posterStyle: TmdbPosterStyle,
+    val apiKey: String,
+    val apiBase: String,
+    val imageBase: String,
+    val apiBaseError: Boolean = false,
+    val imageBaseError: Boolean = false,
+)
+
+@Immutable
+data class ConfigTmdbActions(
+    val setEnabled: (Boolean) -> Unit,
+    val setPosterStyle: (TmdbPosterStyle) -> Unit,
+    val setApiKey: (String) -> Unit,
+    val setApiBase: (String) -> Unit,
+    val setImageBase: (String) -> Unit,
+    val commitApiBase: () -> Unit,
+    val commitImageBase: () -> Unit,
+    val testApi: () -> Unit,
+    val testImage: () -> Unit,
+)
+
+enum class TmdbTest { None, Api, Image }
 
 internal fun parseSubscribe(value: String): SubscribeSource {
     val index = value.indexOf(SUBSCRIBE_SPLIT)
@@ -41,10 +92,12 @@ internal const val SUBSCRIBE_SPLIT = "\t"
 internal fun vodSubscribes(): List<SubscribeSource> =
     KV.get(HawkConfig.SUBSCRIBE_LIST, ArrayList<String>()).map { parseSubscribe(it) }
 
-class ConfigManageViewModel : ViewModel() {
+class ConfigManageViewModel(
+    private val tmdbClientFactory: () -> TmdbApi.TmdbClient,
+) : ViewModel() {
 
-    val vodItems = MutableStateFlow(loadSubscribes(ConfigMode.Vod))
-    val liveItems = MutableStateFlow(loadSubscribes(ConfigMode.Live))
+    val vodItems = MutableStateFlow(loadSubscribes(SubscribeMode.Vod))
+    val liveItems = MutableStateFlow(loadSubscribes(SubscribeMode.Live))
     val activeUrl = MutableStateFlow(KV.get(HawkConfig.API_URL, ""))
     val liveActiveUrl = MutableStateFlow(KV.get(HawkConfig.LIVE_API_URL, ""))
     val liveFollow = MutableStateFlow(ApiConfig.isLiveFollowVod())
@@ -54,6 +107,16 @@ class ConfigManageViewModel : ViewModel() {
     val editTarget = MutableStateFlow<SubscribeSource?>(null)
     val pendingSwitch = MutableStateFlow<PendingSwitch?>(null)
     val toastEvent = MutableStateFlow<String?>(null)
+    private val tmdbState = MutableStateFlow(
+        ConfigTmdbState(
+            enabled = KV.get(HawkConfig.TMDB_ENABLE, false),
+            posterStyle = TmdbPosterStyle.of(KV.get(HawkConfig.TMDB_POSTER_STYLE, 0)),
+            apiKey = KV.get(HawkConfig.TMDB_API_KEY, ""),
+            apiBase = KV.get(HawkConfig.TMDB_API_BASE, ""),
+            imageBase = KV.get(HawkConfig.TMDB_IMAGE_BASE, ""),
+        ),
+    )
+    private val tmdbTesting = MutableStateFlow(TmdbTest.None)
     private val copyCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
@@ -65,6 +128,128 @@ class ConfigManageViewModel : ViewModel() {
                 if (boot is AppBootstrap.Boot.Ready) refreshActiveSnapshot()
             }
         }
+    }
+
+    fun tmdbState(): StateFlow<ConfigTmdbState> = tmdbState.asStateFlow()
+
+    fun tmdbTesting(): StateFlow<TmdbTest> = tmdbTesting.asStateFlow()
+
+    fun tmdbActions(): ConfigTmdbActions = ConfigTmdbActions(
+        setEnabled = { value -> updateTmdbEnabled(value) },
+        setPosterStyle = { style -> updateTmdbPosterStyle(style) },
+        setApiKey = { value -> updateTmdbApiKey(value) },
+        setApiBase = { value -> updateTmdbApiBase(value) },
+        setImageBase = { value -> updateTmdbImageBase(value) },
+        commitApiBase = { commitTmdbApiBase() },
+        commitImageBase = { commitTmdbImageBase() },
+        testApi = { testTmdbApi() },
+        testImage = { testTmdbImage() },
+    )
+
+    private fun updateTmdbEnabled(enabled: Boolean) {
+        KV.put(HawkConfig.TMDB_ENABLE, enabled)
+        tmdbState.value = tmdbState.value.copy(enabled = enabled)
+        TmdbPoster.notifyConfigChanged()
+    }
+
+    private fun updateTmdbPosterStyle(style: TmdbPosterStyle) {
+        KV.put(HawkConfig.TMDB_POSTER_STYLE, style.ordinal)
+        tmdbState.value = tmdbState.value.copy(posterStyle = style)
+        TmdbPoster.notifyConfigChanged()
+    }
+
+    private fun updateTmdbApiKey(value: String) {
+        KV.put(HawkConfig.TMDB_API_KEY, value)
+        tmdbState.value = tmdbState.value.copy(apiKey = value)
+        TmdbPoster.notifyConfigChanged()
+    }
+
+    private fun updateTmdbApiBase(value: String) {
+        tmdbState.value = tmdbState.value.copy(apiBase = value, apiBaseError = false)
+    }
+
+    private fun updateTmdbImageBase(value: String) {
+        tmdbState.value = tmdbState.value.copy(imageBase = value, imageBaseError = false)
+    }
+
+    private fun commitTmdbApiBase() {
+        val normalized = TmdbApi.normalizeBaseUrl(tmdbState.value.apiBase)
+        KV.put(HawkConfig.TMDB_API_BASE, normalized)
+        tmdbState.value = tmdbState.value.copy(
+            apiBase = normalized,
+            apiBaseError = normalized.isNotEmpty() && !TmdbApi.isValidBaseUrl(normalized),
+        )
+        TmdbPoster.notifyConfigChanged()
+    }
+
+    private fun commitTmdbImageBase() {
+        val normalized = TmdbApi.normalizeBaseUrl(tmdbState.value.imageBase)
+        KV.put(HawkConfig.TMDB_IMAGE_BASE, normalized)
+        tmdbState.value = tmdbState.value.copy(
+            imageBase = normalized,
+            imageBaseError = normalized.isNotEmpty() && !TmdbApi.isValidBaseUrl(normalized),
+        )
+        TmdbPoster.notifyConfigChanged()
+    }
+
+    private fun testTmdbApi() {
+        if (!beginTmdbTest(TmdbTest.Api)) return
+        tmdbState.value = tmdbState.value.copy(apiBaseError = false)
+        val apiKey = tmdbState.value.apiKey.trim()
+        if (apiKey.isEmpty()) {
+            toastEvent.value = str(R.string.tmdb_key_required)
+            endTmdbTest(TmdbTest.Api)
+            return
+        }
+        viewModelScope.launch {
+            val result = try {
+                tmdbClientFactory().testApi(apiKey, tmdbState.value.apiBase)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LOG.e("TmdbApi", e)
+                false
+            }
+            toastEvent.value = str(
+                if (result) R.string.tmdb_test_api_ok else R.string.tmdb_test_api_fail,
+            )
+            endTmdbTest(TmdbTest.Api)
+        }
+    }
+
+    private fun testTmdbImage() {
+        if (!beginTmdbTest(TmdbTest.Image)) return
+        tmdbState.value = tmdbState.value.copy(imageBaseError = false)
+        val apiKey = tmdbState.value.apiKey.trim()
+        if (apiKey.isEmpty()) {
+            toastEvent.value = str(R.string.tmdb_key_required)
+            endTmdbTest(TmdbTest.Image)
+            return
+        }
+        viewModelScope.launch {
+            val result = try {
+                tmdbClientFactory().testImage(tmdbState.value.imageBase)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LOG.e("TmdbApi", e)
+                false
+            }
+            toastEvent.value = str(
+                if (result) R.string.tmdb_test_image_ok else R.string.tmdb_test_image_fail,
+            )
+            endTmdbTest(TmdbTest.Image)
+        }
+    }
+
+    private fun beginTmdbTest(test: TmdbTest): Boolean {
+        if (tmdbTesting.value != TmdbTest.None) return false
+        tmdbTesting.value = test
+        return true
+    }
+
+    private fun endTmdbTest(test: TmdbTest) {
+        if (tmdbTesting.value == test) tmdbTesting.value = TmdbTest.None
     }
 
     private fun str(resId: Int, vararg args: Any): String {
@@ -128,8 +313,8 @@ class ConfigManageViewModel : ViewModel() {
     }
 
     private fun referencedBySubscribes(url: String): Boolean =
-        loadSubscribes(ConfigMode.Vod).any { parseSubscribe(it).url == url } ||
-            loadSubscribes(ConfigMode.Live).any { parseSubscribe(it).url == url }
+        loadSubscribes(SubscribeMode.Vod).any { parseSubscribe(it).url == url } ||
+            loadSubscribes(SubscribeMode.Live).any { parseSubscribe(it).url == url }
 
     private fun referencedByRepo(url: String): Boolean =
         (HistoryHelper.getApiLines().orEmpty() + HistoryHelper.getLiveApiLines().orEmpty())
@@ -177,8 +362,8 @@ class ConfigManageViewModel : ViewModel() {
         toastEvent.value = str(R.string.toast_live_follow_vod)
     }
 
-    fun deleteSelected(vod: Boolean) {
-        val mode = if (vod) ConfigMode.Vod else ConfigMode.Live
+    fun deleteSelected(mode: SubscribeMode) {
+        val vod = mode == SubscribeMode.Vod
         val items = if (vod) vodItems.value else liveItems.value
         val target = selected.value.filterNot { isInUse(parseSubscribe(it).url, vod) }
         if (target.size != selected.value.size) {
@@ -214,7 +399,7 @@ class ConfigManageViewModel : ViewModel() {
     }
 
     fun commitAdd(vod: Boolean, name: String, url: String) {
-        val mode = if (vod) ConfigMode.Vod else ConfigMode.Live
+        val mode = if (vod) SubscribeMode.Vod else SubscribeMode.Live
         val newItems = saveSubscribe(mode, name, url)
         if (vod) vodItems.value = newItems else liveItems.value = newItems
         if (newItems.size == 1) {
@@ -225,7 +410,7 @@ class ConfigManageViewModel : ViewModel() {
 
     fun commitEdit(vod: Boolean, target: SubscribeSource, name: String, url: String) {
         if (url.isEmpty()) return
-        val mode = if (vod) ConfigMode.Vod else ConfigMode.Live
+        val mode = if (vod) SubscribeMode.Vod else SubscribeMode.Live
         val newValue = (name.ifEmpty { url }) + SUBSCRIBE_SPLIT + url
         val oldValue = selected.value.firstOrNull { parseSubscribe(it).url == target.url }
         val updated = updateSubscribe(mode, target, name, url)
@@ -258,15 +443,15 @@ class ConfigManageViewModel : ViewModel() {
         ApiConfig.get().invalidateLiveConfig()
     }
 
-    private fun subscribeKeyOf(mode: ConfigMode): String = when (mode) {
-        ConfigMode.Vod -> HawkConfig.SUBSCRIBE_LIST
-        ConfigMode.Live -> HawkConfig.LIVE_SUBSCRIBE_LIST
+    private fun subscribeKeyOf(mode: SubscribeMode): String = when (mode) {
+        SubscribeMode.Vod -> HawkConfig.SUBSCRIBE_LIST
+        SubscribeMode.Live -> HawkConfig.LIVE_SUBSCRIBE_LIST
     }
 
-    private fun loadSubscribes(mode: ConfigMode): List<String> =
+    private fun loadSubscribes(mode: SubscribeMode): List<String> =
         KV.get(subscribeKeyOf(mode), ArrayList<String>()).toList()
 
-    private fun saveSubscribe(mode: ConfigMode, name: String, url: String): List<String> {
+    private fun saveSubscribe(mode: SubscribeMode, name: String, url: String): List<String> {
         val value = (name.ifEmpty { url }) + SUBSCRIBE_SPLIT + url
         val list = ArrayList(loadSubscribes(mode))
         val existIndex = list.indexOfFirst { parseSubscribe(it).url == url }
@@ -275,7 +460,7 @@ class ConfigManageViewModel : ViewModel() {
         return list
     }
 
-    private fun updateSubscribe(mode: ConfigMode, original: SubscribeSource, name: String, url: String): List<String> {
+    private fun updateSubscribe(mode: SubscribeMode, original: SubscribeSource, name: String, url: String): List<String> {
         val value = (name.ifEmpty { url }) + SUBSCRIBE_SPLIT + url
         val list = ArrayList(loadSubscribes(mode))
         val index = list.indexOfFirst { parseSubscribe(it).url == original.url }

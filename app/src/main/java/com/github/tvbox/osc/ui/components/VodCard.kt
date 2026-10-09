@@ -40,7 +40,7 @@ fun VodCard(
                 shape = RoundedCornerShape(16.dp),
             ) {
                 Box(modifier = Modifier.aspectRatio(2f / 3f)) {
-                    VodPoster(video.name, video.pic)
+                    VodPoster(video.name, video.pic, year = video.year, sourceKey = video.sourceKey, tmdbCacheOnly = true)
                     RatingBadge(video, Modifier.align(Alignment.TopEnd))
                 }
             }
@@ -66,7 +66,7 @@ fun VodCard(
         shape = RoundedCornerShape(16.dp),
     ) {
         Box(modifier = Modifier.aspectRatio(2f / 3f)) {
-            VodPoster(video.name, video.pic)
+            VodPoster(video.name, video.pic, year = video.year, sourceKey = video.sourceKey, tmdbCacheOnly = true)
             Box(
                 modifier = Modifier
                     .fillMaxSize()

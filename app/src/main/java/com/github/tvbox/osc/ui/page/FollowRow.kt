@@ -105,6 +105,8 @@ internal fun FollowRow(
                 VodPoster(
                     name = follow.name,
                     pic = follow.pic,
+                    sourceKey = follow.sourceKey,
+                    tmdbCacheOnly = true,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(8.dp)),

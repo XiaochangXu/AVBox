@@ -16,6 +16,9 @@
     <string name="preload_cache_size">緩存容量</string>
     <string name="settings_clear_cache">清除緩存</string>
     <string name="settings_clear_cache_subtitle">清理應用程式的使用緩存</string>
+    <string name="settings_clear_cache_confirm_text">將清理圖片與播放緩存，並連帶清除 TMDB 海報緩存，下次瀏覽時重新取得。</string>
+    <string name="settings_hide_status_bar">隱藏狀態列</string>
+    <string name="settings_hide_status_bar_subtitle">開啟後封面延伸至螢幕頂部</string>
     <string name="music_queue">播放隊列</string>
     <string name="music_mode_list">列表循環</string>
     <string name="theme_nav_bar">底部導航</string>

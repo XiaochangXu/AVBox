@@ -4,6 +4,7 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.request.crossfade
+import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.util.LOG
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -34,6 +35,7 @@ object VodImages {
     }
 
     private fun picClient(): OkHttpClient = OkHttpClient.Builder()
+        .apply { OkGoHelper.getDefaultClient()?.dns?.let { dns(it) } }
         .cache(picCacheDir?.let { Cache(it, PIC_HTTP_CACHE_MB * 1024L * 1024L) })
         .addInterceptor(picHeaderInterceptor)
         .addNetworkInterceptor(picForceCacheInterceptor)

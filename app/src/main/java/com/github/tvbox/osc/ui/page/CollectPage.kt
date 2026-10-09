@@ -217,7 +217,7 @@ internal fun CollectTab(
                         contentPadding = PaddingValues(
                             start = 16.dp + navStart,
                             end = 16.dp,
-                            top = 8.dp,
+                            top = 24.dp,
                             bottom = 8.dp + navBottom,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -297,7 +297,7 @@ private fun CollectCard(
                 .clip(RoundedCornerShape(16.dp))
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         ) {
-            VodPoster(name = item.name, pic = item.pic, modifier = Modifier.fillMaxSize())
+            VodPoster(name = item.name, pic = item.pic, sourceKey = item.sourceKey, tmdbCacheOnly = true, modifier = Modifier.fillMaxSize())
             if (editMode) {
                 SelectCircle(
                     selected = selected,

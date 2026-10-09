@@ -63,6 +63,7 @@ import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.MusicSettings
+import com.github.tvbox.osc.util.TmdbPoster
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,6 +83,7 @@ data class SettingsState(
     val autoSwitchLine: Boolean,
     val m3u8Purify: Boolean,
     val incognito: Boolean,
+    val hideStatusBar: Boolean,
     val gestureControlDisabled: Boolean,
     val navAnimationDisabled: Boolean,
     val navLiveHidden: Boolean,
@@ -140,6 +142,7 @@ class SettingsViewModel : ViewModel() {
         viewModelScope.launch {
             val text = withContext(Dispatchers.IO) {
                 FileUtils.clearCache()
+                TmdbPoster.clearCachedPosters()
                 FileUtils.formatCacheSize(FileUtils.getCacheSize())
             }
             applyCacheSizeText(text)
@@ -167,6 +170,7 @@ class SettingsViewModel : ViewModel() {
         autoSwitchLine = KV.get(HawkConfig.AUTO_SWITCH_LINE, false),
         m3u8Purify = KV.get(HawkConfig.M3U8_PURIFY, false),
         incognito = KV.get(HawkConfig.INCOGNITO, false),
+        hideStatusBar = KV.get(HawkConfig.HIDE_STATUS_BAR, false),
         gestureControlDisabled = KV.get(HawkConfig.GESTURE_CONTROL_DISABLED, false),
         navAnimationDisabled = KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false),
         navLiveHidden = KV.get(HawkConfig.NAV_LIVE_HIDDEN, false),
@@ -300,17 +304,43 @@ fun SettingsPage(
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
+                    var showClearCacheDialog by rememberSaveable { mutableStateOf(false) }
                     SettingsRow(
                         title = stringResource(R.string.settings_clear_cache),
                         subtitle = stringResource(R.string.settings_clear_cache_subtitle),
                         iconRes = R.drawable.ic_delete,
                         valueText = state.cacheSizeText,
-                        onClick = {
-                            vm.clearCache {
-                                Toast.makeText(context, context.getString(R.string.toast_cache_cleared), Toast.LENGTH_LONG).show()
-                            }
-                        },
+                        onClick = { showClearCacheDialog = true },
                     )
+                    if (showClearCacheDialog) {
+                        val dismissThen = LocalSheetDismissThen.current
+                        AVBoxAlertDialog(
+                            onDismissRequest = { showClearCacheDialog = false },
+                            title = { Text(stringResource(R.string.settings_clear_cache)) },
+                            text = { Text(stringResource(R.string.settings_clear_cache_confirm_text)) },
+                            dismissButton = {
+                                TextButton(onClick = { showClearCacheDialog = false }) {
+                                    Text(stringResource(R.string.common_cancel))
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showClearCacheDialog = false
+                                    dismissThen {
+                                        vm.clearCache {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.toast_cache_cleared),
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
+                                    }
+                                }) {
+                                    Text(stringResource(R.string.common_confirm))
+                                }
+                            },
+                        )
+                    }
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsOptionMenuRow(

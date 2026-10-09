@@ -69,7 +69,7 @@ fun <T> CapsuleSegmentedButton(
     onOptionSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     style: SegmentStyle = SegmentStyle.Connected,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainer,
 ) {
     val selectedIndex = options.indexOfFirst { it.value == selectedValue }.coerceAtLeast(0)
 
@@ -135,6 +135,7 @@ fun <T> CapsuleSegmentedButton(
                 index = index,
                 count = options.size,
                 style = style,
+                containerColor = containerColor,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -209,6 +210,7 @@ private fun <T> CapsuleToggleButton(
                 count - 1 -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                 else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
             },
+            colors = ToggleButtonDefaults.colors(containerColor = containerColor),
             interactionSource = interactionSource,
         ) {
             SegmentContent(option, MaterialTheme.typography.bodySmall)

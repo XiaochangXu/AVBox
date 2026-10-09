@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -88,7 +88,7 @@ fun AppTopBarScaffold(
             ) {
                 TopAppBar(
                     modifier = Modifier
-                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
                         .padding(start = topBarStartInset),
                     windowInsets = WindowInsets(0, 0, 0, 0),
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -146,7 +146,7 @@ fun TopScrim(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.surfaceContainer,
     height: Dp = with(androidx.compose.ui.platform.LocalDensity.current) {
-        (WindowInsets.statusBars.getTop(this) * 1.2f).toDp()
+        (WindowInsets.statusBarsIgnoringVisibility.getTop(this) * 1.2f).toDp()
     },
 ) {
     Box(

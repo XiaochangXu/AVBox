@@ -44,7 +44,7 @@ object Http {
     }
 
     internal suspend fun executeRawWithRetry(request: Request, client: OkHttpClient): HttpRawResponse {
-        return executeChecked(request, client) { HttpRawResponse(it.body.bytes(), it.headers) }
+        return executeChecked(request, client) { HttpRawResponse(it.body.bytes(), it.headers, it.code) }
     }
 
     private suspend fun <T> executeChecked(request: Request, client: OkHttpClient, read: (Response) -> T): T {
@@ -130,4 +130,4 @@ class HttpRequest internal constructor(private val url: String) {
 
 class HttpException(val code: Int) : Exception("HTTP $code")
 
-class HttpRawResponse internal constructor(val body: ByteArray, val headers: Headers)
+class HttpRawResponse internal constructor(val body: ByteArray, val headers: Headers, val code: Int)

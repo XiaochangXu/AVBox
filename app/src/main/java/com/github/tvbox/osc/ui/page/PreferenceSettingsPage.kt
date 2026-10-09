@@ -117,6 +117,15 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
+                        title = stringResource(R.string.settings_hide_status_bar),
+                        leadingIconRes = R.drawable.ic_pref_hide_status_bar,
+                        subtitle = stringResource(R.string.settings_hide_status_bar_subtitle),
+                        checked = state.hideStatusBar,
+                        onCheckedChange = { vm.put(HawkConfig.HIDE_STATUS_BAR, it) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
+                    SettingsSwitchRow(
                         title = stringResource(R.string.settings_gesture_disable),
                         leadingIconRes = R.drawable.ic_pref_gesture,
                         subtitle = stringResource(R.string.settings_gesture_disable_subtitle),

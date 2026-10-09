@@ -353,7 +353,8 @@ class DetailActivity : BaseActivity(), PageHost {
             playContainer?.setVideoSizeReadyListener(null)
             window.decorView.removeCallbacks(videoSizeTimeoutRunnable)
             val controller = WindowCompat.getInsetsController(window, window.decorView)
-            controller.show(WindowInsetsCompat.Type.systemBars())
+            controller.show(WindowInsetsCompat.Type.navigationBars())
+            applyHideStatusBarPref()
             applyStatusBarAppearance()
             window.decorView.postDelayed({
                 if (!isFinishing && !isDestroyed) applyStatusBarAppearance()

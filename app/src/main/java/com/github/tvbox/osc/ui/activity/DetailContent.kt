@@ -70,6 +70,7 @@ internal fun DetailContent(
 
     val currentSource = ApiConfig.get().getSource(vm.firstsourceKey)
     val displaySourceName = currentSource?.name ?: vm.firstsourceKey
+    val heroRollPaused by vm.fullScreen.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -92,6 +93,7 @@ internal fun DetailContent(
                 onCast = { activity.openCast() },
                 onCollect = { vm.toggleCollect() },
                 onFollow = { followScheduleOpen = true },
+                rollPaused = heroRollPaused,
             )
         }
 
@@ -140,6 +142,10 @@ internal fun DetailContent(
                     }
                 }
             }
+        }
+
+        item(key = "tmdb_info") {
+            TmdbInfoSection(info.name, info.year)
         }
 
         if (flags.isNotEmpty()) {

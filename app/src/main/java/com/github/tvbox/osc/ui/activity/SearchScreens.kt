@@ -331,6 +331,9 @@ internal fun SearchResultRow(
             VodPoster(
                 name = video.name,
                 pic = video.pic,
+                year = video.year,
+                sourceKey = video.sourceKey,
+                tmdbCacheOnly = true,
                 modifier = Modifier
                     .width(68.dp)
                     .fillMaxHeight(),

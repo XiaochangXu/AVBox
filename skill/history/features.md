@@ -5153,3 +5153,81 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **验证**：`:app:assembleDebug` 绿；`i18n_gate` ui 层 0 处（非 ui 37 处为既有登记项，本次未新增）；`i18n_check_keys` declared=referenced=545、无 UNUSED / 无 REFERENCED-BUT-NOT-DECLARED；`i18n_align` en 545=545 PASS、b+zh+Hant 545=545 PASS（S2T 提示仅语言名 endonym）、zh-rHK 子集 75 条 PASS（新增条目无 REDUNDANT 判）。**未装机**，真机走查（英文单行 / 深色、纯黑主题）待做。
 
 **文档**：规范 §4.3「顶部应用信息卡」条目同步；`.codebuddy` / `.trae` 两镜像同步。
+
+## 2026-10-10｜TMDB 支持:配置页 UI(阶段一,两轮走查已落地) + 海报替换(阶段二)
+
+**需求**:用户提出"支持 tmdb 海报"(输密钥后显示影视海报),随后扩展出"首页数据源"需求;拍板拆三阶段、先做配置页 UI(方案档 `文档/tmdb-support-plan.md`,本地不入库)。阶段一期间两轮真机走查意见已落地(样式行改弹出菜单、分段控件换 M3E Connected + 用户自备图标、面板改分组卡片、`CapsuleSegmentedButton` Connected 分支启用 `containerColor`)。
+
+**阶段一(配置管理页 TMDB tab)**:新增 `ui/page/ConfigTmdbPage.kt`(`ConfigTmdbScreen(state, actions, testing)`)+ `ConfigManageViewModel` 的 `ConfigTmdbState/Actions/TmdbTest`;`ConfigMode` 加 `Tmdb`(分段 2→3 项、`AnimatedContent` 方向改按 ordinal、顶部动作区按 tab 屏蔽);新组件 `SettingsTextFieldRow`(自绘 Surface + BasicTextField,掩码/清除/错误态)与 `SettingsTestButton`(primary 实心 + loading);新 `util/TmdbApi.kt`(`DefaultTmdbClient` 经 `tmdbClientFactory()` 注入:testApi= `/3/configuration` 判 `"images"`、testImage= 常量 poster w92 判 `Content-Type`;`normalizeBaseUrl`/`isValidBaseUrl`/`isBearerKey`);KV 5 键(`tmdb_enable/poster_style/api_key/api_base/image_base`)+ 2 默认值常量,`KVKeySpec` 已注册;三语 17 条 `tmdb_*` + `common_tmdb`;7 个图标(用户自备,`ic_config_vod/tmdb/live` + `ic_config_tmdb_on/off` + `ic_config_poster_style`)。偏差:§3.4.3 的 `AVBoxOptionSheet` 泛型重载未做,改用 `SettingsOptionMenuRow`(ordinal 值,文案分离);图片测试同样要求 API Key 非空;地址非法仍落库但标红。
+
+**阶段二(海报替换)**:
+1. `util/TmdbApi.kt` 扩展:`/3/search/multi`(`language` 随 `LanguageManager`;v3 `api_key` / v4 `eyJ` 前缀走 Bearer)、`/3/{media}/{id}/images`、`cleanTitle`(半角化/去标注/去「第X季」/取别名首段)、`normalizeForMatch`、`pickBest`(标题完全相等才采纳 + 年份最近)、`parseSearchHits`/`parseImagePaths`(JsonObject 手解析)、`imageUrl`(w342/w780)。`search`/`images` 走 `Http.getRaw` 并显式判 429(`HttpRawResponse` 新增 `code` 字段,`Http.kt` 唯一构造点同步)。
+2. 新 `util/TmdbPoster.kt`(门面):KV 键 `cache_tmdb_`(单图)/`cache_tmdb_images_`(多图)前缀,值为 `poster_path`,负缓存 7 天(`-<expireAt>`);内存 LRU 512;4 路信号量 + 同键 `Deferred` 去重 + 429 退避 60s(失败不写负缓存,仅"搜到但无匹配"写);`configEpoch`(StateFlow)供展示点重解析;`clearCachedPosters()` 已接进 `SettingsPage.clearCache()`(此前清缓存不清 KV ⇒ 会残留"清了缓存还是没海报")。
+3. `VodPoster` 注入:新参数 `year`/`sourceKey`/`resolveTmdb`,`tmdbPosterUrl` 工具(站点图先出、TMDB 命中替换,失败链 TMDB→站点大图→原图→色块;`sourceKey=="tmdb"` 跳过;underlay 不再回调 `onImage`,避免取色被站点图污染);调用点补参:`VodCard`×2、`SearchScreens`、`HistoryRow`、`FollowRow`、`CollectPage`、`HeroSpotlight`(上报"替换后 URL"给 `HomeHeroBackdrop`/`onPosterPic`;`HomeBackdrop` 键保持站点 `pic`)、`DetailHeroPoster`(`DetailHero` 内:三档样式,多图走 `/images` vote 降序前 10;固定档走单图;「随机」进页 `Random.nextInt` 一次并 `remember` 住;轮播 5s + `repeatOnLifecycle(STARTED)` 只在可见时跑 + Coil `enqueue` 预载下一张;取色/页面背景上报固定首图);`HeroCarousel`(无调用点)与音乐页封面不接。
+4. `VodImages.picClient()` 补挂 `OkGoHelper.getDefaultClient().dns`(原自建 client 没有自定义 DNS)。
+5. `ConfigManageViewModel` 的 setEnabled/setApiKey/commitApiBase/commitImageBase/setPosterStyle 调 `TmdbPoster.notifyConfigChanged()`(清内存 LRU + bump epoch,不清 KV —— 缓存与配置无关)。
+
+**验证**:`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **827 例 / 0 失败**(+22:新增 `TmdbApiTest` 16 例、`TmdbPosterTest` 6 例);已装机(vivo 10AF1J04JX0016G)。
+
+**文档**:规范 §6.21 新增「TMDB 海报替换」约束、§7 未决清单登记走查项;`.codebuddy` / `.trae` 两镜像同步。
+
+**待真机走查**:① 配置页 TMDB tab 各值存取与两个测试按钮;② 订阅源模式:列表/搜索/收藏/历史/追剧/首页 Hero/详情页 Hero 海报是否按 TMDB 命中替换、站点图先出无闪烁、未启用零变化;③ 三档样式 + 取色不跟随轮播 + 退后台轮播停;④ 清除缓存后不残留(清后回站点图、下次进入重查);⑤ 阶段三(首页数据源)未启动。
+
+## 2026-10-10｜TMDB 阶段二收尾批(走查修复 + webhtv 借鉴 + 轮播增强)
+
+**背景**:阶段二装机后连续多轮真机走查,踩出四类映射盲区与体验问题,逐一修复;期间对比 `示例文件/webhtv-main`(FongMi 系)的 TMDB 匹配实现(`TmdbMatcher`/`TmdbSeasonResolver`/`EpisodeSeasonPolicy`,子代理调研),借鉴两项低成本改进。
+
+**修复/增强(全部已装机,构建绿 + 852 例单测 / 0 失败)**:
+1. **电影剧照兜底**:站点"剧集形态"但 TMDB 只有 movie(功夫女足 30 集线路)→ 用 `/3/movie/{id}/images` backdrops(无文字优先/vote 降序/前 10,`cache_tmdb_stills_` 前缀,`TmdbClient.stills()` + `parseBackdropPaths` 纯函数)按集号**循环填充**选集缩略图;单集电影也有一张剧照;剧照取不到才回无图。
+2. **分集映射放宽**(`TmdbApi.mapEpisodes`):①单季且站点集数 < 该季 → 按序取前 N 集(凡人修仙传 194/206,美人余 4/28);②特别篇(season 0)并入:站点集数 ≤ 正片+特别篇总和 → 0 季按 TMDB 顺序在前并入,超出按序截断(斗罗大陆 266=2+264 全映射、265 缺 1 集取前 N);带季号提示不放宽;③分集映射各失败分支补 `echo-tmdb episodes skip reason=movie|nomatch|detail|map` 诊断日志(map 附季结构摘要)。
+3. **匹配质量(webhtv 借鉴)**:①`pickBest` 完全相等候选内决胜评分(年份距离 → 站点无年份取最早原版 → `original_language=="zh"` 优先 → id 稳定);`TmdbSearchHit` 加可空 `originalLanguage`,Gson 旧缓存缺字段=null 安全。②尾标签/括号词表大扩充(版本地区/修复/画质编码/帧率/更新至N集/完结/导演剪辑版等,长词在前);③解说类后缀清洗(空格冒号后段截断 + 尾词删,治「伟大的长征 深度解读」「凡人修仙传剧情揭秘」「仙逆杂谈」);④归一化折叠「剧场版→剧场」(治「仙逆剧场弑仙之战」↔「仙逆剧场版：弑仙之战」)。**刻意不抄**:分季变体防护(完全相等口径天然免疫,死代码)、Levenshtein 模糊评分(与"宁可少不要错"冲突)。
+4. **列表仅缓存模式**:`VodPoster(tmdbCacheOnly=true)` 7 个列表调用点(VodCard×2/SearchScreens/HistoryRow/FollowRow/CollectPage/HeroSpotlight 前景+背景)只读 `cachedPoster` 不发请求,未命中保持站点图;详情页保持解析 ⇒ "没进过详情页的片不触发 TMDB 请求"。cacheOnly 分支每次重组重读缓存(内存命中,代价可忽略)换取返回列表立即刷新。
+5. **详情页轮播增强**:①切换动画 `AnimatedContent` 新图右→左滑入 300ms(`HERO_ROLL_ANIM_MS`),预载保证无等待;②**全屏播放暂停轮播**:`DetailContent` collect `vm.fullScreen` → `DetailHero(rollPaused)` → `DetailHeroPoster(paused)`,定时器随 Hero 离组销毁(真机日志验证全屏期间零切换零预载;退出全屏从第 1 张重新开始,remember 不跨全屏保留,已确认可接受);③选集缩略图下方集数名居中(`textAlign=Center`)。
+6. **清缓存确认弹窗**:设置页「清除缓存」改 `AVBoxAlertDialog` 确认框(取消左/确定右,`LocalSheetDismissThen` 惯例),4 语文案 `settings_clear_cache_confirm_text`,防误触。
+7. **诊断日志**:分集映射失败分支补 `echo-tmdb episodes skip`;轮播临时埋点 `echo-hero`(验证后已删,含 LOG 白名单项与 import);`echo-tmdb` 保留。
+
+**验证**:`assembleDebug` 绿 + `testDebugUnitTest` **852 例 / 0 失败**(较阶段二 +25);行尾全 LF;已装机(vivo 10AF1J04JX0016G)。
+
+**文档**:规范 §6.21 增补收尾批六条口径、§7 更新走查结论与遗留;`.codebuddy`/`.trae` 两镜像同步。**方案档 `文档/tmdb-support-plan.md` 已由用户删除**(2026-10-10,本地计划档使命结束),阶段三口径以本条目与规范 §7 为准。
+
+**遗留/待定**:①衍生条目(斗破苍穹特别篇/三年之约/年番动态漫画、斗罗大陆5重生唐三动态漫画等)TMDB 无收录 = 数据源限制不修;②站点按年番拆季 vs TMDB 单季合并(斗破苍穹第3季 12 集 vs 1:45)无集号依据不出图,终极解 = 手动季绑定(webhtv `TmdbSeasonMatchCache` 三态模型,阶段三后评估);③季 `air_date` 年份校验;④特别篇在站点末尾排序的头几集错位(待观察,常见则上集名对位)。
+
+**同日走查修复(用户报"详情页海报没效果"的定位与修复)**:
+- **现场取证**:详情页海报仍是站点图;KV(`run-as cat files/mmkv/avbox_kv`,脚本解析)里 `cache_tmdb_*`/`cache_tmdb_images_*` **全是负缓存**(`-1792181802878` 等,反解写入时刻 = 用户当天试错的那几分钟,一批 4 秒内写完);当前 `tmdb_api_key` = 32 位 hex v3 密钥、`tmdb_api_base`/`tmdb_image_base` 空(默认)、`tmdb_poster_style` = 2(轮播)。设备侧 `curl` 实测:`api.tmdb.org` DNS 正常(CloudFront 143.204.160.79)、无密钥 401(预期)、**带该密钥 `/3/configuration` 200 且 `search/multi?query=庆余年` 首条即命中** —— 网络与密钥均无问题。
+- **真因**:用户先用中文文本试过密钥(MMKV 内留有 `等你信呢`/`到店几点见` 历史值)⇒ 401 响应被旧逻辑当成"搜索成功但无匹配"写入 7 天负缓存;填对密钥后,又因旧 `notifyConfigChanged()` **不清 KV** ⇒ 负缓存命中即不再重查 ⇒ 一直显示站点图(负缓存锁死)。
+- **修复**:①`DefaultTmdbClient.search`/`images` 对非 2xx 一律抛 `HttpException`(仅 2xx 解析成功后确无匹配才写负缓存);②`TmdbPoster.readApiKey()` 加 `trim()`(输入框不 trim,带空白密钥在测试按钮里 trim 后能通过、实际查询 401);③`notifyConfigChanged()` 改为**同时清 KV 两前缀**(改任何 TMDB 配置即自愈),`clearCachedPosters()` 委托它;④补诊断日志 `echo-tmdb`(`search q= hits= top=` / `pick ->` / `fail code= msg=` / 非 2xx 与空结果的 body 摘要≤180 字符)+ 加进 `LOG.FILE_LOG_PREFIXES`(vivo 吞 logcat,只能靠文件日志)。
+- **处置**:构建绿 + 827 例单测 0 失败,已装机;请用户在设置页点「清除缓存」(或动一下任意 TMDB 配置)清掉历史负缓存后复验;若仍有问题抓 `files/preload_debug.log` 的 `echo-tmdb` 行。
+
+**同日走查二轮(用户提议"解析期不要露出站点图",拍板方案 B)**:
+- **症状**:清缓存后替换生效,但详情页 Hero 是"先站点图(糊)→ TMDB 图替换"的跳变,站点图首帧易被误认为"没生效"。用户提议"点击后先转圈、等 TMDB 就绪再进详情页"。
+- **取舍**:不做"等待再进"——TMDB 有无数据事前不可知(必须超时兜底)、会人为拖慢进入,且详情页数据请求本与解析并行;改"照常秒进 + Hero 海报区解析期转圈"。
+- **实现**:`tmdbPosterUrl` 拆出三态 `tmdbPosterPath`(`ui/components/VodPoster.kt`,`""`=无 / `null`=解析中 / 非空=命中路径,`tmdbPosterUrl` 保留为其 URL 包装);`DetailHeroPoster` 新增 `DetailHeroPosterLoading`(`ContainedLoadingIndicator` 64dp,`ExperimentalMaterial3ExpressiveApi`),在 `(multiEnabled && images == null) || fixedPath == null` 且未超时(1.2s,`HERO_TMDB_LOADING_TIMEOUT_MS`,进入起算不重启)时渲染;超时/无匹配回落站点图;缓存命中/未启用不转圈;解析期 `onBackdropPic` 仍上报站点图(背景模糊层不空)。只改详情页 Hero,首页 Hero 与列表不动。
+- **验证**:构建绿 + 827 例单测 0 失败,已装机。待走查:①首次进未解析过的片 → 转圈 ≤1.2s → 直出 TMDB 海报;②二次进入同片 → 无转圈直出;③TMDB 无匹配的片 → 转圈后回落站点图;④关 TMDB 开关 → 无转圈零变化。
+
+**同日三轮:"同片多次解析"合并优化(用户拍板做)**:
+- **问题**:日志里「庆余年」一天内被 search 4 次 —— 缓存键是 `md5(名字|年份)`,而列表页与详情页的名字/年份常有差异(后缀、"第二季"、year 0 vs 具体年),每变体各自发请求、各自跳变一次。
+- **改法**:`TmdbPoster` 缓存重构为两层 —— ①`cache_tmdb_hits_<md5(归一化片名)>` 存**搜索命中列表**(Gson JSON,空列表=`-<expire>` 负缓存 7 天);②`cache_tmdb_images_<mediaType>_<id>` 存多图路径列表(按 TMDB id 共享,替代原"按名字|年份"的 images 键)。**`pickBest` 全部在本地做**(读 hits → 归一化比较 → 年份最近),同片任意变体只发一次 search;单图 poster 的独立缓存键删除(结果由本地 pick 现算,值仍不含完整 URL)。原有的"非 2xx 不算无匹配/429 退避/4 路闸门/同键去重/配置变更清缓存/echo-tmdb 诊断"全部保留,`resolvePoster`/`cachedPoster`/`resolveImages`/`cachedImages` 对外契约不变(UI 零改动)。
+- **附带**:升级后旧格式缓存(`cache_tmdb_<md5(name|year)>`)不再被读,首次使用会重新解析一遍(无副作用,`clearCachedPosters` 可清);单测更新为 hits 编解码往返/负缓存/过期/坏数据 4 例+images 3 例。
+- **验证**:构建绿 + 827 例单测 0 失败,已装机。待走查:同一部片先列表后详情(或反复进出)时 `echo-tmdb search` 只应出现一次。
+
+**同日四轮:详情页「TMDB 元数据」+「演员阵容」(用户提供两张参考图)**:
+- **需求**:匹配到 TMDB 时,在详情页简介下方加「TMDB 元数据」块(图一:标题+评分+TMDB 简介+类型标签),并在播放线路与元数据之间加「演员阵容」块(图二:圆形头像横排+名字)。
+- **取数**:`TmdbApi` 加 `/3/{media}/{id}?language=<App 语言>&append_to_response=credits`(一次拿 overview/vote_average/genres/credits.cast)+ `parseDetail`/`parseCast`(只保留有 `profile_path` 的、按 `order` 排序取前 12)+ `profileUrl`(w185);接口方法加 `detail`。`TmdbPoster` 加 `cachedDetail`/`resolveDetail`(先走 hits 层本地 pick 拿 id → detail 缓存 `cache_tmdb_detail_<media>_<id>`,失败不缓存、空数据缓存)+ `profileUrl` 门面。
+- **UI**:新文件 `ui/activity/DetailTmdbSections.kt`(`TmdbInfoSection` + `rememberTmdbDetail` 数据 hook;元数据块 = titleLarge 无图标标题 + "评分 x.x / 10"(新文案 `tmdb_rating`)+ 简介 + 类型 chips(`Surface`+`detailCardColor()`);演员块 = `LazyRow` 64dp 头像 + `labelMedium` 名字,照 `RelatedSection` 结构);`DetailContent.kt` 在 desc 与 flags 之间插 `item(key = "tmdb_info")`。文案三条三语(`tmdb_meta_title`/`tmdb_rating`/`detail_cast`)。同日后补:头像容器由圆形改**花瓣形**(`MaterialShapes.Cookie12Sided.toShape()`,与「我的」页应用徽章同款,M3E API 项目已有先例)。
+- **五轮(同日,用户追加"点击演员头像弹 bottom sheet 显示演员信息")**:`TmdbCastMember` 补 `id`(person id);新增 `TmdbApi.TmdbPerson`(`/3/person/{id}?language=xx`:name/biography/birthday/place_of_birth/profile_path)+ `parsePerson`;`TmdbPoster` 加 `cachedPerson`/`resolvePerson`(缓存 `cache_tmdb_person_<id>`,失败不缓存);`DetailTmdbSections` 头像加 `clickable` → `TmdbCastSheet`(项目 `AVBoxBottomSheet` 容器:头像+名字即时用列表数据渲染,资料到达补生日·出生地(` · ` 拼接,零新文案)与简介,加载中 40dp `ContainedLoadingIndicator`)。**旧详情缓存(cast 无 id)由 `decodeValidDetail`(cast 非空且全 id<=0 ⇒ 视为无效)自动失效重拉**,不写版本前缀、无残留键。单测 +2(parsePerson、decodeValidDetail 旧格式),832 例绿,已装机。
+- **兜底**:未启用/未匹配/数据为空时整块不渲染;`TmdbApi` 片名清洗词表补 `// i18n: keep`(数据值非文案,gate 非 ui 计数 39→37 回基线)。
+- **验证**:构建绿 + **830 例**单测 0 失败(+3:parseDetail 排序过滤/缺字段/profidUrl);i18n 三件套(check_keys 567/567、gate ui 0 处、align PASS)已过;已装机。待走查:①匹配到 TMDB 的片 → 简介下方见元数据+演员、空数据片两块的缺失不影响布局;②头像/类型 chips 随主题与深色正常;③未启用 TMDB 时详情页零变化。
+
+- **六轮(同日,用户报「灵异女仆第三季」类不匹配,拍板 A+B+C)**:
+  - **根因(设备实测)**:站点名清洗正确(「第三季」已剥),TMDB 搜索也搜得到(id 88055),但该条目 zh-CN **无中文主标题**(返回 `name=Servant`),译名只存在于别名接口(`/alternative_titles` 的 CN="灵异女仆"/TW="靈異女僕");「标题完全相等」策略必然失败。日志另暴露:站点名带**零宽字符**(`神探之痕迹‎`)全等也比不上、**裸语言后缀**(`一个部门的诞生粤语`)与**裸尾部年份**(`隐秘而伟大2013`)未被清洗。
+  - **修复 A(别名回退)**:`TmdbApi` 加 `alternativeTitles`(tv 字段 `results`/movie 字段 `titles`,已 curl 实测区分)+ `parseAlternativeTitles`;`TmdbPoster` 的 `pickBestWithAlias` = 主标题精确匹配 → `cache_tmdb_alias_<md5(归一化名)>` 同步命中 → 对前 2 个候选查别名(列表缓存 `cache_tmdb_alts_<media>_<id>`)命中则写别名缓存(**同步路径 `cachedPoster/cachedImages` 也要读它**,否则只当次有效);`resolvePoster/resolveImages/resolveDetail` 三处共用。
+  - **修复 B/C(清洗)**:`cleanTitle` 增剥不可见字符(U+200B–200F/2060/FEFF/00AD)与尾部裸标注(国语/粤语/中字/双语/HD/4K 等,**循环剥但不剥空**,`i18n: keep` 标注词表)。
+  - **验证**:构建绿 + **835 例**单测 0 失败(+3:清洗增强、别名解析双形态、别名命中解码);i18n gate 无新增(37 基线);已装机。待走查:`灵异女仆`类应命中(日志出现 `echo-tmdb alias hit id=...`)、`神探之痕迹`零宽名可直接命中。
+  - **同比走查续修(用户确认修好后抓日志)**:日志证实别名回退生效(`alias hit id=88055 title=Servant`、`alias hit id=1541125 title=年会不能停！2`);另发现**纯标点差异**仍漏(`年会不能停2！`/`年会不能停` vs TMDB `年会不能停！2`/`年会不能停！`)——`normalizeForMatch` 补剥装饰性标点(保留 `.` `-`);顺手补 `cachedDetail` 同步路径漏读 `cachedAliasHit` 的不一致。836 例绿,已装机。
+
+**同日七轮:详情页选集缩略图(用户参考图,拍板形态 A)**:
+- **需求**:匹配到 TMDB 时,详情页「选集」显示带**分集缩略图**的选集卡(参考图 = 16:9 剧照 + 左上集号 + 分集名)。
+- **取数(已 curl 实测)**:`/3/tv/{id}/season/{n}` 每集有中文 `name` 与 `still_path`(w300);`/3/tv/{id}` 的 `seasons[]`(season_number/episode_count)提供映射依据 —— **detail 缓存前缀升 `cache_tmdb_detail2_`**(字段新增,旧缓存自动失效重拉),删旧的 cast-id 判定与对应测试。
+- **映射(`TmdbApi.mapEpisodes` 纯函数,保守口径)**:①季号提示(`parseSeasonHint`:第X季/Season N/S1/中文数字一到九十九,来源 = 站点名优先、线路名兜底)且该季集数 == 站点集数 → 用该季;②唯一数量匹配的季 → 用该季;③全部季总集数匹配 → 跨季累加;④都不等 → **不启用**(整条选集保持原纯文字卡)。结果按 `cache_tmdb_episodes_<md5(名|集数|季提示)>` 缓存;季集按 `cache_tmdb_season_<tvId>_<n>` 缓存。
+- **UI(`DetailEpisodes.kt`)**:`EpisodeCard` 双形态 —— 未启用 = 原 `DetailItemCard` 纯文字卡;启用 = 180dp 16:9 缩略图卡(图 + 左上集号角标(黑 55% 底白字)+ 下方分集名(TMDB 名优先、站点名回退),选中 = 1.5dp primary 描边 + 名称 primary,无图 = `detailCardColor()` 占位);`rememberEpisodeMeta` 数据 hook(epoch 联动、缓存优先)。
+- **验证**:构建绿 + **843 例**(+7:mapEpisodes 四种情形、parseSeasonHint 六形态、parseSeasonEpisodes 排序、stillUrl;并替换 1 例旧 validDetail 测试)0 失败;已装机。待走查:①带季号名的多季剧(灵异女仆第三季,TMDB 4×10)应按提示映射到第 3 季;②单季剧按数量映射;③映射不上/未启用时选集不变;④无图集显示占位、不影响布局。
