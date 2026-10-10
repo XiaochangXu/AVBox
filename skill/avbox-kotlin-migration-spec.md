@@ -24,7 +24,7 @@ description: M0 立规产出——迁移流程与禁止项、Kotlin 静态/字�
 | `app/src/main/java` 语言构成 | **204 Java / 146 Kotlin** | M0 起点快照（口径 = 仓库自有 main 源码）；后续切片计数见上表各行 |
 | `player` 模块 | **27 Java / 0 Kotlin** | `player/src/main/java/xyz/doikki/videoplayer/**` |
 | `app/src/python/java`（Chaquopy sourceSet） | **5 Java** | `com/github/catvod/crawler/pyLoader.java` + `com/undcover/freedom/pyramid/{PyLog,PythonLoader,PythonSpider,PyToast}.java`；**计划 §2 与 M11 口径未覆盖**，已登记入计划 |
-| `app/src/test` | ~~12 Java / 53 Kotlin~~ → **0 Java / 65 Kotlin** | **【已迁，2026-10-10】**原"不在迁移范围（§3.1 口径 = `main`）"仅指当时不做；当日按用户要求把最后 11 个 Java 测试全量迁 Kotlin（1241 行，纯语言迁移逻辑零改动），`app/src/test` 内 **Java 清零**。`quickjs/` 模块的 4 个 Java 属 vendored 第三方，不在范围。实测规则与踩坑见 §7.23 |
+| `app/src/test` | ~~12 Java / 53 Kotlin~~ → **0 Java / 66 Kotlin** | **【已迁，2026-10-10】**原"不在迁移范围（§3.1 口径 = `main`）"仅指当时不做；当日按用户要求把最后 11 个 Java 测试全量迁 Kotlin（1241 行，纯语言迁移逻辑零改动），`app/src/test` 内 **Java 清零**。新增 `UriUtilTest`（13 例，先写后迁，见 §7.24）。实测规则与踩坑见 §7.23 |
 | `libs/backdrop` 子模块 | 31 Kotlin / 0 Java | 无 Java |
 | `ApiConfig.get()` 依赖面 | **104 命中 / 37 文件** | 计划 §2 原写 106/37，以本行为准 |
 | `observeForever` 面 | 2 处 | `player/PlaybackFetch.java`、`player/PreloadCoordinator.java` |
@@ -868,7 +868,7 @@ fromTopBand=false|UNDECIDED -> 2 次 ← 位移未越起判阈值
 
 # 7.22 M11 实测登记（2026-10-06，终审：全库自有源码零 Java）
 
-> ⚠️ **2026-10-10 更正**：本节的"全库零 Java"口径当时**未覆盖 `app/src/test`**（测试源码仍在范围外，实存 11 个 Java，另 `app/src/python/java` 的 5 个已于 M11 前迁完）。当日已把测试侧也迁完 ⇒ 现在**仓库自有源码真正零 Java**，唯一残留的 4 个 `.java` 在 vendored 模块 `quickjs/src/main/java/com/whl/quickjs/wrapper/`（第三方包装层，不迁）。详见 §7.23。
+> ⚠️ **2026-10-10 更正**：本节的"全库零 Java"口径当时**未覆盖 `app/src/test`**（测试源码仍在范围外，实存 11 个 Java，另 `app/src/python/java` 的 5 个已于 M11 前迁完）。当日已把测试侧与 `quickjs/` 本地模块的 Java 全部迁完 ⇒ **现在全仓自有源码零 Java**（含 `quickjs/` 本地包装层；真正第三方的是 maven 依赖，见 §7.24）。详见 §7.23 与 §7.24。
 
 **结论**：四处零 Java 判据全部满足；`:app:assembleDebug` 绿、`:app:testDebugUnitTest` **655 用例 / 0 失败 / 0 错误 / 1 跳过（82 suite）**（`--rerun-tasks` 真跑，与 M9/M10 基线持平）；契约面 `javap -p -s` catvod 公开面 25 类 **旧有新无 = 0**；**收敛轮抓出并修复 2 条「本次迁移引入」的「中」**。
 
@@ -918,7 +918,7 @@ M9 已写下教训「**别只按文件分工复核，要按 API 语义轴分工*
 
 # 7.23 测试源码迁移（2026-10-10，`app/src/test` Java 清零）
 
-**性质**：**纯语言迁移、零逻辑改动**（用户要求「将 java 测试全部迁移到 kotlin」）。11 个文件 / 1241 行 → 11 个 `.kt`，**用例数逐类守恒**：ConfigParser 31 / Depot 7 / VodInfoReverse 2 / EpisodeMatcher 16 / FileUtilsNativeLibRepair 7 / SearchHelper 5 / PlaybackAttemptState 6 / SubtitleFilePicker 11 / BootGuard 22 / KVKeySpec 12 / KVDecoder 20 = **139 例**；全量 `:app:testDebugUnitTest` **891 用例 / 0 失败 / 0 错误 / 1 跳过（112 suite）**，与迁移前基线**逐项相同**。迁移后仓库自有源码零 Java，残留 4 个在 vendored `quickjs/`。
+**性质**：**纯语言迁移、零逻辑改动**（用户要求「将 java 测试全部迁移到 kotlin」）。11 个文件 / 1241 行 → 11 个 `.kt`，**用例数逐类守恒**：ConfigParser 31 / Depot 7 / VodInfoReverse 2 / EpisodeMatcher 16 / FileUtilsNativeLibRepair 7 / SearchHelper 5 / PlaybackAttemptState 6 / SubtitleFilePicker 11 / BootGuard 22 / KVKeySpec 12 / KVDecoder 20 = **139 例**；全量 `:app:testDebugUnitTest` **891 用例 / 0 失败 / 0 错误 / 1 跳过（112 suite）**，与迁移前基线**逐项相同**。迁移后仓库自有源码零 Java，残留 4 个在 `quickjs/` 本地包装层（**同日随后已一并迁完，见 §7.24**）。
 
 **测试迁移与 main 迁移的差别（本节踩点全在这里）**：
 
@@ -931,6 +931,40 @@ M9 已写下教训「**别只按文件分工复核，要按 API 语义轴分工*
 7. **`getBytes`/`String(byte[])` 的平台默认字符集陷阱在测试里同样存在**（§7.9 规则 5）：保留 `content.getBytes(StandardCharsets.UTF_8)`，不要图省事写 `toByteArray()`。
 8. **`(long) Integer.MAX_VALUE + 1` → `Integer.MAX_VALUE.toLong() + 1`**：Java 的强转 + 隐式提升必须显式化，否则 `Int` 运算溢出。
 9. **复核判据 = 用例数逐类守恒 + 全量基线不变**，不是"编译通过"：跑 `:app:testDebugUnitTest` 后与迁移前的 `TEST-*.xml` 逐类对齐 `tests/failures/errors/skipped`（本次 112 suite / 891 例逐项相同）。**测试迁移最容易出的错是"断言被静默放宽"**（`assertEquals` 换 `assertTrue`、可空断言写成非空断言），这类错编译完全看不出来。
+
+# 7.24 `quickjs/` 本地包装层迁移（2026-10-10，全仓自有源码 Java 清零）
+
+**⚠️ 先纠正一个认知（2026-10-10 实测）**：`quickjs/` 模块**不是** vendored 第三方代码。真正第三方的是两个 maven 依赖：
+
+| 依赖 | 提供 |
+|---|---|
+| `wang.harlon.quickjs:wrapper-java:3.2.3` | `com.whl.quickjs.wrapper` 包下 **21 个类**（`QuickJSContext`/`JSObject`/`JSArray`/`JSCallFunction`/`JSMethod`/`JSFunction`/`ModuleLoader`…） |
+| `wang.harlon.quickjs:wrapper-android:3.2.3` | `com.whl.quickjs.android.QuickJSLoader` + 4 个 ABI 的 `libquickjs-android-wrapper.so` |
+
+`quickjs/` 本地模块里**只有 4 个自己写的文件**，只是**借用了上游包名**（`com.whl.quickjs.wrapper`）：`ContextSetter`/`Function`（注解，抄自上游 0.8.1+，我们依赖的 3.2.3 jar 里**没有**）、`JSUtils`（自有工具 + `BugReview #22` 的 `& 0xFF` 修复）、`UriUtil`（**AOSP `UriUtil` 原样搬运**，与 JS 引擎无关）。⇒ **上游那 21 个类不能迁**（迁了 native 对不上），这 4 个可以，且已迁完。
+
+**结论**：4 个文件 / 实际逻辑约 130 行 → 全 Kotlin，`quickjs/src` **0 Java**。构建侧唯一改动 = `quickjs/build.gradle.kts` 加 `alias(libs.plugins.kotlin.android)` + `kotlin { compilerOptions { jvmTarget = JVM_21 } }`（该模块原本是纯 Java library 模块）。**调用点零改动**（`Connect.kt`/`Global.kt`/`JsSpider.kt` 用 Kotlin 语法照旧）。全量 `:app:testDebugUnitTest` **904 用例 / 0 失败 / 0 错误 / 1 跳过（113 suite）**（891 基线 + 新增 `UriUtilTest` 13 例）。已装机。
+
+## 先写测试再迁（本次的方法论，值得照用）
+
+`UriUtil.resolve` 是 AOSP 的**下标算术**（`StringBuilder.append(cs,start,end)` / `lastIndexOf(char,from)` / `removeDotSegments` 的原地 delete + limit 修正），且是 **JS 模块路径解析的唯一实现**（`JsSpider:398`），此前**零单测覆盖**。故：
+
+1. **先补 `app/src/test/.../quickjs/UriUtilTest.kt`（13 例）并在 Java 版上跑绿** —— 这组用例就是行为基线
+2. 再迁 Kotlin，**同一组用例原样跑绿** ⇒ 等价性由用例证明，而不是"看着一样"
+3. 覆盖的边界：相对/`./`/`../`（含多级越界不逃根）/根路径/网络路径引用（`//host`）/相对 base 无 scheme/`#frag` 与 `?q=1` 引用/绝对引用里的点段/null 入参（→ 空串）/authority-only base/`isAbsolute`
+
+⚠️ **`resolveToUri` 在 JVM 单测里不可测**：`Uri.parse` 在 Robolectric 下返回 **null**（`android.net.Uri` 静态桩），写了必失败。它是 `resolve` 的一行包壳，只在真机/仪器测试可验 —— 已在用例里注明并删除该条。
+
+## 四个实测踩点
+
+1. **注解的 `Retention` 应显式写 `RUNTIME`（本次写法，属"自证意图"而非"救火"）**：`@Function`/`@ContextSetter` 是被**反射**消费的（`JsSpider.bind` 的 `receiver.javaClass.methods` + `method.isAnnotationPresent(...)` + `method.invoke(...)`），所以保留级别必须可运行时读取。
+   ⚠️ **本规范初稿在此写错过一处，此处更正**：初稿称"Kotlin 注解的默认保留级别是 `BINARY`，不写 `@Retention` 就运行时读不到"——**实测不成立**。`kotlin.annotation.Retention` 的 `AnnotationDefault` 本身就是 `AnnotationRetention.RUNTIME`（证据：`javap -v -p -cp <kotlin-stdlib.jar> kotlin.annotation.Retention` 打印 `AnnotationDefault: default_value: Lkotlin/annotation/AnnotationRetention;.RUNTIME`），且 Kotlin 一定会把映射后的 `java.lang.annotation.Retention` 写进字节码。`CLASS` 是 **Java 侧** `java.lang.annotation.Retention` 的默认值，与 Kotlin 注解的生成无关。⇒ 不写 `@Retention` 也能被反射读到，它不是"静默失败点"。
+   结论不变的是**判据**：`javap -v` 看到 `RetentionPolicy.RUNTIME` 与 `ElementType.METHOD`（本次两注解实测均满足，见下方证据），而不是"编译通过"。
+2. **`import java.lang.reflect.Array as ReflectArray` + 不要 import `java.util.Map`/`java.util.Collection`**：前者会**遮蔽 Kotlin 的 `Array<T>`**（报 "No type arguments expected for 'class Array'"），后者会遮蔽 Kotlin 的 `Map`/`Collection`（报 "Unresolved reference 'entries'" / `iterator()` 歧义）。Kotlin 的 `Map` 映射到 `java.util.Map`，**描述符不变**，去掉 import 零风险。
+3. **`ByteArray` 与 `List<*>` 在 `Any?` 入参下重载歧义**：Java 靠静态类型选重载，Kotlin 在 `toJSValue(value: Any?)` 里调 `toArray(ctx, value)` 会歧义 ⇒ 把字节数组那个重载**改名** `toByteArray`（Java 版叫 `toArray(byte[])`）。**本次零调用点使用它**（`JsSpider` 走的 `JSUtils<String>().toArray(ctx, List)`），故改名无影响 —— 但若将来有 Java 调用点要按旧名调，需补 `@JvmName("toArray")`。
+4. `JSUtils` 的静态方法保留 `@JvmStatic`（`QuickJSContext`/`JSObject` 等上游类与 Java 调用方仍需静态形态）；`toJsonObject/toJsonArray/isEmpty/isNotEmpty` 的描述符与 Java 逐字一致。
+
+**未验证面（登记）**：`quickjs` 的 native 只有 `arm64-v8a`（app 的 `abiFilters` 也只留它），**JS 桥无法在 JVM/Robolectric 下跑** ⇒ "迁完 JS 源仍能正常初始化 + `@Function` 全局函数可被 JS 调用 + 模块 import 解析正确"这三条只能装机走查，本次已装机但**尚未用真实 JS 源回归**。
 
 # 8. 回滚
 

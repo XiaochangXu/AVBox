@@ -14,21 +14,9 @@
  * limitations under the License.
  */
 
-package com.whl.quickjs.wrapper;
+package com.whl.quickjs.wrapper
 
-import java.lang.annotation.Documented;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
-/**
- * The interface QuickJSContext setter.
- *
- * @since 0.8.1
- */
-@Documented
-@Target(ElementType.METHOD)
-@Retention(RetentionPolicy.RUNTIME)
-public @interface ContextSetter {
-}
+@MustBeDocumented
+@Target(AnnotationTarget.FUNCTION)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Function(val name: String = "")
