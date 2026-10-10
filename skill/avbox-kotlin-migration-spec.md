@@ -24,7 +24,7 @@ description: M0 立规产出——迁移流程与禁止项、Kotlin 静态/字�
 | `app/src/main/java` 语言构成 | **204 Java / 146 Kotlin** | M0 起点快照（口径 = 仓库自有 main 源码）；后续切片计数见上表各行 |
 | `player` 模块 | **27 Java / 0 Kotlin** | `player/src/main/java/xyz/doikki/videoplayer/**` |
 | `app/src/python/java`（Chaquopy sourceSet） | **5 Java** | `com/github/catvod/crawler/pyLoader.java` + `com/undcover/freedom/pyramid/{PyLog,PythonLoader,PythonSpider,PyToast}.java`；**计划 §2 与 M11 口径未覆盖**，已登记入计划 |
-| `app/src/test` | 12 Java / 53 Kotlin | **不在迁移范围**（§3.1 口径 = `main`），终态判据不含测试 |
+| `app/src/test` | ~~12 Java / 53 Kotlin~~ → **0 Java / 65 Kotlin** | **【已迁，2026-10-10】**原"不在迁移范围（§3.1 口径 = `main`）"仅指当时不做；当日按用户要求把最后 11 个 Java 测试全量迁 Kotlin（1241 行，纯语言迁移逻辑零改动），`app/src/test` 内 **Java 清零**。`quickjs/` 模块的 4 个 Java 属 vendored 第三方，不在范围。实测规则与踩坑见 §7.23 |
 | `libs/backdrop` 子模块 | 31 Kotlin / 0 Java | 无 Java |
 | `ApiConfig.get()` 依赖面 | **104 命中 / 37 文件** | 计划 §2 原写 106/37，以本行为准 |
 | `observeForever` 面 | 2 处 | `player/PlaybackFetch.java`、`player/PreloadCoordinator.java` |
@@ -868,6 +868,8 @@ fromTopBand=false|UNDECIDED -> 2 次 ← 位移未越起判阈值
 
 # 7.22 M11 实测登记（2026-10-06，终审：全库自有源码零 Java）
 
+> ⚠️ **2026-10-10 更正**：本节的"全库零 Java"口径当时**未覆盖 `app/src/test`**（测试源码仍在范围外，实存 11 个 Java，另 `app/src/python/java` 的 5 个已于 M11 前迁完）。当日已把测试侧也迁完 ⇒ 现在**仓库自有源码真正零 Java**，唯一残留的 4 个 `.java` 在 vendored 模块 `quickjs/src/main/java/com/whl/quickjs/wrapper/`（第三方包装层，不迁）。详见 §7.23。
+
 **结论**：四处零 Java 判据全部满足；`:app:assembleDebug` 绿、`:app:testDebugUnitTest` **655 用例 / 0 失败 / 0 错误 / 1 跳过（82 suite）**（`--rerun-tasks` 真跑，与 M9/M10 基线持平）；契约面 `javap -p -s` catvod 公开面 25 类 **旧有新无 = 0**；**收敛轮抓出并修复 2 条「本次迁移引入」的「中」**。
 
 ## 本轮新增的一道闸门：全库「API 语义轴」扫描（后续任何迁移项目照用）
@@ -913,6 +915,22 @@ M9 已写下教训「**别只按文件分工复核，要按 API 语义轴分工*
 2. **必须区分「迁移引入」与「既有」**：判据 = 该文件是否有被删的 `.java`（`git log --diff-filter=D -1 -- '**/<类名>.java'`）。既有 Kotlin 的同名写法不计入收敛判据，只登记。
 3. **`trim()` 是 Java→Kotlin 迁移的头号语义差**（Java 裁 `<= ' '`，Kotlin 裁 Unicode 空白）。凡 header / UA / URL / 文件名 / 协议串 / 配置值的裁剪点，一律 `trim { it <= ' ' }`；新写代码无 Java 对应物时可用 Kotlin `trim()`。
 4. **同一语义的「两侧实现」要成对检查**（本例：预载侧签名 vs 引擎侧缓存 key）—— 单看一个文件永远发现不了「口径不一致」。
+
+# 7.23 测试源码迁移（2026-10-10，`app/src/test` Java 清零）
+
+**性质**：**纯语言迁移、零逻辑改动**（用户要求「将 java 测试全部迁移到 kotlin」）。11 个文件 / 1241 行 → 11 个 `.kt`，**用例数逐类守恒**：ConfigParser 31 / Depot 7 / VodInfoReverse 2 / EpisodeMatcher 16 / FileUtilsNativeLibRepair 7 / SearchHelper 5 / PlaybackAttemptState 6 / SubtitleFilePicker 11 / BootGuard 22 / KVKeySpec 12 / KVDecoder 20 = **139 例**；全量 `:app:testDebugUnitTest` **891 用例 / 0 失败 / 0 错误 / 1 跳过（112 suite）**，与迁移前基线**逐项相同**。迁移后仓库自有源码零 Java，残留 4 个在 vendored `quickjs/`。
+
+**测试迁移与 main 迁移的差别（本节踩点全在这里）**：
+
+1. **私有字段不能用属性语法**：`SourceBean.isIndexSource` 是 `val`（写 `a.isIndexSource`，**不是** `isIndexSource()`）；`Depot.name/url` 是 **private 字段 + `getName()/getUrl()`**，Kotlin 侧只能用 getter（`items[0].getName()`）—— Java 侧"能编译"是因为那本来就是方法调用。
+2. **平台类型 vs 可空类型决定断言重载**：`SourceBean.header` 声明 `MutableMap<String,String>?` ⇒ Kotlin 侧要 `!!`（`val h = a.header!!`）；而 `getUrl()/getName()/safeString` 系列返回**非空** ⇒ `assertEquals` 与 Java 侧同重载。
+3. **`TypeRegistry` 不是 `fun interface`**：Kotlin **不能**给它传 lambda（`KVDecoder.TypeRegistry { … }` 报 "does not have constructors"）。Java 能写 lambda 是因为 Java 对**任意** SAM 接口都允许。测试侧写 `object : KVDecoder.TypeRegistry { override fun typeOf(key: String): Type? = … }`（或命名类），**不要**为了测试方便把生产接口改成 `fun interface`（那是扩大生产面改动）。
+4. **`Int::class.javaPrimitiveType` 是 `Class<Int>?`**，喂给 `Class<*>` 形参类型不匹配 ⇒ 一律写 `Int::class.java`（`coerceNumber` 只按类型判定）。
+5. **`null` 实参需要显式类型**：`BootGuard.addDisabledSource(null, …)` 会把 `ArrayList<Nothing>?` 传给 `ArrayList<String>?` ⇒ 先落 `val noList: ArrayList<String>? = null` 再传（Java 由目标类型推断，Kotlin 不会）。
+6. **`TemporaryFolder` 规则用 `@get:Rule`**（Kotlin 注解默认落字段，JUnit 要 getter）；`throws Exception` 在 `@Test` 方法上**不加** `@Throws`。
+7. **`getBytes`/`String(byte[])` 的平台默认字符集陷阱在测试里同样存在**（§7.9 规则 5）：保留 `content.getBytes(StandardCharsets.UTF_8)`，不要图省事写 `toByteArray()`。
+8. **`(long) Integer.MAX_VALUE + 1` → `Integer.MAX_VALUE.toLong() + 1`**：Java 的强转 + 隐式提升必须显式化，否则 `Int` 运算溢出。
+9. **复核判据 = 用例数逐类守恒 + 全量基线不变**，不是"编译通过"：跑 `:app:testDebugUnitTest` 后与迁移前的 `TEST-*.xml` 逐类对齐 `tests/failures/errors/skipped`（本次 112 suite / 891 例逐项相同）。**测试迁移最容易出的错是"断言被静默放宽"**（`assertEquals` 换 `assertTrue`、可空断言写成非空断言），这类错编译完全看不出来。
 
 # 8. 回滚
 
