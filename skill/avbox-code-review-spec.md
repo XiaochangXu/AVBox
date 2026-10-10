@@ -76,6 +76,7 @@
 - BootGuard 的 `IGNORABLE_FRAME_PREFIXES` 白名单是唯一旋钮；无崩溃标记的启动会清零 `BOOT_LOADING_COUNT`
 - MMKV 复杂键必须在 `KVKeySpec` 登记显式类型；`KV.contains` 才是存在性判断，`KV.get(key, def)` 分不清"不存在"与"值就是 def"
 - 爬虫等阻塞调用必须在 IO 线程
+- 播放进度只许经 `VideoPlayerController.progressSnapshot()` 读（门不过返回 null）；直读 `videoView.duration/currentPosition/bufferedPercentage` 即违规（唯一例外：`updateLiveButtonsState()` 用 duration 判直播）
 
 ## 已完成的专项审查（勿重复报告；相关领域的新发现仍可报）
 

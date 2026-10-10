@@ -50,7 +50,7 @@ interface PlayerControlApi {
 
     fun hidePauseRoot()
 
-    fun onNewPlayStarted()
+    fun onNewPlayStarted(sameContent: Boolean)
 
     /** 内容地址下发到播放器时告知控制器，用于识别切换途中的陈旧进度。 */
     fun onContentUrlSet(url: String?)

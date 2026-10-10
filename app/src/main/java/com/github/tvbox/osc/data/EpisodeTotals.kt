@@ -8,7 +8,7 @@ object EpisodeTotals {
 
     private const val KEY = "episode_totals"
 
-    private const val LIMIT = 300
+    private const val LIMIT = WatchProgressIndex.MAX_TITLES
 
     private val INDEX_PATTERNS = listOf(
         Regex("^第?\\s*(\\d{1,4})\\s*[集期话話]?\\s*(?:\\.[a-z0-9]{1,5})?$"), // i18n: keep(R13:集数正则)

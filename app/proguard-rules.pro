@@ -14,8 +14,6 @@
 -keep public class * extends android.view.View
 
 -dontwarn androidx.**
--keep class androidx.** { *; }
--keep interface androidx.** { *; }
 
 -keep class org.xmlpull.v1.** {*;}
 
@@ -106,7 +104,6 @@
 -keep class com.xunlei.downloadlib.** {*;}
 -keep class com.whl.quickjs.** {*;}
 
--keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 
 -keep class com.github.tvbox.osc.bean.** { *; }
@@ -116,7 +113,6 @@
 -keep class com.google.common.** { *; }
 -keep class com.thegrizzlylabs.sardineandroid.** { *; }
 -keeppackagenames kotlin.**
--keep class kotlin.** { *; }
 -keepclassmembers enum com.materialkolor.PaletteStyle {
     <fields>;
 }

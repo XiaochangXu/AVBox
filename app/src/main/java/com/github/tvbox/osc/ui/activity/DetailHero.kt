@@ -2,7 +2,6 @@ package com.github.tvbox.osc.ui.activity
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,6 +69,7 @@ import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.player.ui.playerPressEffect
 import com.github.tvbox.osc.ui.components.ImagePalette
 import com.github.tvbox.osc.ui.components.LocalTopBarGlassBackdrop
 import com.github.tvbox.osc.ui.components.TopBarActionBox
@@ -291,9 +291,9 @@ internal fun DetailHero(
                     .padding(top = HeroActionSpacing)
                     .widthIn(min = HeroPlayCapsuleMinWidth)
                     .height(HeroPlayCapsuleHeight)
+                    .playerPressEffect(onTap = onPlay)
                     .clip(RoundedCornerShape(50))
                     .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onPlay)
                     .padding(horizontal = HeroPlayCapsuleHorizontalPadding),
                 contentAlignment = Alignment.Center,
             ) {
@@ -368,8 +368,8 @@ private fun HeroCircleButton(
     Box(
         modifier = Modifier
             .size(HeroCircleButtonSize)
-            .detailGlass(CircleShape)
-            .clickable(onClick = onClick),
+            .playerPressEffect(onTap = onClick)
+            .detailGlass(CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

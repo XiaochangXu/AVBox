@@ -7,7 +7,6 @@ import android.os.Looper
 import android.webkit.WebView
 import androidx.appcompat.view.ContextThemeWrapper
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.data.WatchProgressStore
 import com.github.tvbox.osc.player.host.EngineSurfaceRenderViewFactory
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
 import com.github.tvbox.osc.player.state.PlayState
@@ -38,9 +37,17 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
 
     private val stateScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    private val progressSampler: PlaybackProgressSampler = PlaybackProgressSampler(object : PlaybackProgressSampler.Host {
+        override fun playerView(): MyVideoView = videoView
+
+        override fun playbackController(): PlaybackController = controller
+
+        override fun isLive(): Boolean = liveMode
+    })
+
     private val progressSink: AppPlayerView.ProgressSink = object : AppPlayerView.ProgressSink {
         override fun saveProgress(url: String?, progress: Long) {
-            WatchProgressStore.save(controller.progressOwner(), url, progress, videoView.duration)
+            progressSampler.onSinkSave(url, progress)
             if (controller.webPlayUrl() != null && progress > 0) {
                 controller.markPlaybackStarted()
                 activeView().hideTipOnUiThread()
@@ -103,6 +110,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
 
     private fun onPlayStateChanged(playState: PlayState) {
         if (released) return
+        progressSampler.onPlayStateChanged(playState)
         if (playState == PlayState.ERROR) {
             LOG.i(
                 "echo-player error: kernel="
@@ -331,6 +339,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         serviceLostWasPlaying = false
         setLiveFlag(false)
         LOG.i(TAG + " engine release")
+        progressSampler.stop()
         val page = attachedPage()
         pageRef = null
         page?.onServiceStopped()
@@ -538,7 +547,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         override fun setSubtitleViewVisible(visible: Boolean) {
         }
 
-        override fun onNewPlayStarted() {
+        override fun onNewPlayStarted(sameContent: Boolean) {
         }
 
         override fun applyPlayerConfigToView(forceKernel: Int) {
@@ -598,11 +607,12 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
                 KernelReusePolicy.decide(kernelPresent, rebuildKernel, forceExoPlayer, true) == KernelDecision.REUSE
             val sameContent = reusePlayer && controller.isSameStartedContent()
             if (!reusePlayer && kernelPresent) releasePlayer()
-            controller.markContentStarted()
+            if (sameContent) videoView.saveCurrentProgress()
+            videoView.setProgressKey(controller.progressKey())
             videoView.setTrackMemoryKey("")
+            controller.markContentStarted()
             videoView.setUrl(url, headers)
             if (reusePlayer) {
-                if (controller.isSameStartedContent()) videoView.saveCurrentProgress()
                 val base = controller.playTimeoutBasePosition()
                 videoView.skipPositionWhenPlay((if (sameContent) videoView.resumePositionForReplay(base) else base).toInt())
                 videoView.replay(false)

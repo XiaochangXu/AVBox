@@ -124,9 +124,9 @@ class PlayContainerViewBridge(private val container: PlayContainer) : PlaybackVi
         controller.getSubtitleView().visibility = if (visible) View.VISIBLE else View.GONE
     }
 
-    override fun onNewPlayStarted() {
+    override fun onNewPlayStarted(sameContent: Boolean) {
         container.mExitingPreview = false
-        container.mController?.onNewPlayStarted()
+        container.mController?.onNewPlayStarted(sameContent)
     }
 
     override fun applyPlayerConfigToView(forceKernel: Int) {

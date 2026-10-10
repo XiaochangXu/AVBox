@@ -47,7 +47,7 @@ chaquopy {
             .firstOrNull { file(it).exists() }
             ?.let { buildPython(it) }
         pip {
-            options("-i", "https://mirrors.aliyun.com/pypi/simple/")
+            options("-i", "https://repo.huaweicloud.com/repository/pypi/simple/")
             options("--extra-index-url", "https://chaquo.com/pypi-13.1")
             install("lxml")
             install("ujson")

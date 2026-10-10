@@ -235,6 +235,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
     private fun seekTo(positionMs: Long) {
         player.seekTo(positionMs)
+        player.saveCurrentProgress()
         ui.positionMs = positionMs.coerceAtLeast(0L)
         controller.updateMusicSession()
     }
@@ -548,7 +549,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
             activity.ui.lyrics = emptyList()
         }
 
-        override fun onNewPlayStarted() {
+        override fun onNewPlayStarted(sameContent: Boolean) {
             activity.refreshMeta()
         }
 

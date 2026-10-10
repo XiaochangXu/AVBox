@@ -13,7 +13,6 @@ import com.github.tvbox.osc.player.state.LockVisibility
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.SelectDialogState
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.PlayerUtils
 import org.json.JSONException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -300,26 +299,25 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
     }
 
     override fun onSeekPreview(progress: Int) {
-        val view = host.videoView ?: return
-        val duration = PlayerUtils.safeTimeMs(view.duration)
-        host.state.seekPreviewPositionMs = seekBarToPosition(progress, duration)
+        val snapshot = host.progressSnapshot() ?: return
+        host.state.seekPreviewPositionMs = seekBarToPosition(progress, snapshot.durationMs)
     }
 
     override fun onSeekFinished(progress: Int) {
         keepControlsAlive()
         val view = host.videoView
+        val snapshot = host.progressSnapshot()
         var seekTarget = -1
-        if (view != null) {
-            val duration = PlayerUtils.safeTimeMs(view.duration)
-            seekTarget = seekBarToPosition(progress, duration).toInt()
+        if (view != null && snapshot != null) {
+            seekTarget = seekBarToPosition(progress, snapshot.durationMs).toInt()
             view.seekTo(seekTarget.toLong())
+            view.saveCurrentProgress()
         }
         if (seekTarget >= 0) host.state.position = seekTarget
         host.state.dragging = false
         keySeekProgress = 0
         host.startProgress()
         keepControlsAlive()
-        if (seekTarget >= 0) host.savePlaybackProgress(notifyHistory = true, seekTargetMs = seekTarget)
     }
 
     override fun onSeekCancelled() {
@@ -330,8 +328,8 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
     }
 
     override fun onSeekStep(dir: Int) {
-        val view = host.videoView ?: return
-        val duration = PlayerUtils.safeTimeMs(view.duration)
+        val snapshot = host.progressSnapshot() ?: return
+        val duration = snapshot.durationMs
         if (duration <= 0) return
         if (!host.state.controlsVisible) applyShowBottom()
         if (!host.state.dragging) {
@@ -342,7 +340,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
         keySeekProgress = (keySeekProgress + keySeekIncrement(duration) * dir).coerceIn(0, SEEK_MAX)
         host.state.seekPreviewPositionMs = seekBarToPosition(keySeekProgress, duration)
         host.updateSeekUiHint(
-            PlayerUtils.safeTimeMs(view.currentPosition),
+            snapshot.positionMs,
             host.state.seekPreviewPositionMs.toInt(),
         )
         host.uiHandler.removeCallbacks(keySeekCommitRunnable)
@@ -351,10 +349,11 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
 
     override fun onSeekRelative(deltaMs: Long) {
         val view = host.videoView ?: return
-        val duration = PlayerUtils.safeTimeMs(view.duration)
+        val snapshot = host.progressSnapshot() ?: return
+        val duration = snapshot.durationMs
         if (duration <= 0) return
         if (!host.state.controlsVisible) applyShowBottom()
-        val current = PlayerUtils.safeTimeMs(view.currentPosition)
+        val current = snapshot.positionMs
         val target = (current + deltaMs).coerceIn(0L, duration.toLong())
         host.state.dragging = false
         keySeekProgress = 0
@@ -362,7 +361,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
         host.state.position = target.toInt()
         host.state.seekPreviewPositionMs = target
         host.updateSeekUiHint(current, target.toInt())
-        host.savePlaybackProgress(notifyHistory = true, seekTargetMs = target.toInt())
+        view.saveCurrentProgress()
         keepControlsAlive()
     }
 

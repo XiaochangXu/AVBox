@@ -3876,6 +3876,24 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 
 **验证**:`read_lints` 0;`assembleDebug` BUILD SUCCESSFUL(UI 小改不跑单测);装机 `06:07:35`;新增/改动文件行尾统一 LF(同目录既有 drawable 的 CRLF 是既有状态,未动)。**待走查**:图标+文字在半宽按钮内的观感(横竖屏)。代码未提交。
 
+### 进度统计收敛为引擎级单写入者(2026-10-11,步 1 + 步 2)
+
+**背景(用户报告)**:音乐播放页听歌 → 页内换集 → 历史记录百分比从不统计。根因 = 历史百分比(`PlaybackProgress`)的唯一写入方是**页面级** `VideoPlayerController` 的进度心跳,而音乐页不装该控制器(详情页移交音乐页时 `PlaybackEngine.detach(keepPlayback=true)` 里 `videoView.releaseController()` 已把它摘掉);换集时 `PlaybackStarter.play()` 又会先 `PlaybackProgress.onEpisodeStartNoScroll()` 清百分比 ⇒ 换集后连残留值都没有。附带确认:续播位置(`WatchProgressStore`)不受影响,坏的只是"历史百分比"这一路。
+
+**步 1(单写入者)**:新增 `player/PlaybackProgressSampler.kt`(引擎持有)—— `onPlayStateChanged` 由引擎的 `playStateFlow` 收集器驱动:`PLAYING` 立即采样 + 之后每 5s 一次(同一份样本同时写位置与百分比);`PAUSED`/`IDLE` flush 并按需发 `TYPE_HISTORY_REFRESH`;`COMPLETED` `markFinished`;直播态不采样。引擎 `progressSink`(`AppPlayerView.saveCurrentProgress` 的显式落盘点:切集前 / detach / release / 同址重播前 / onSaveInstanceState / onCompletion 清 0)改为转交采样器 ⇒ **四条落盘时点与清 0 语义不变**。`VideoPlayerController` 的 `PlaybackProgress` 调用、`savePlaybackProgress`、`saveGestureProgress` 及 `PlayerActionsDelegate` / `VideoGestureActionsImpl` 的连带调用整体删除(控制器只留 UI 心跳)。音乐页与无页面(无头)起播因此**自动**被统计,页面零改动。
+
+**步 2(存储口径)**:`PlaybackProgress` 写入口改显式 `vod: VodInfo?` 入参(不再经 `PlaybackPorts.currentVod` 归属,统计归属回到"引擎当前 session");KV 值从纯 int 升为 `{"p","d","t"}`(读取兼容旧 int;超限淘汰按 `t` 升序、旧格式视为 0 先淘汰,`pickEvictions` 抽出可单测);`onEpisodeStart` 增无痕早退(无痕不再删/改既有数据);`LIMIT` 与 `EpisodeTotals` 统一引用 `WatchProgressIndex.MAX_TITLES`。
+
+**与最初计划的两处偏差(有意)**:①**"起播清百分比"仍留在 `PlaybackStarter`**(引擎侧单一入口,不是页面)—— 改成"采样器检测 key 变化即清"会漏掉"同集重播/重试"这类 key 不变的场景(旧百分比会先被显示到 30s 门槛才涨),且异步清与起播不同步;②**未把百分比并进位置存储** —— "播完清续播点(=0)"与"显示已看完(=100%)"在语义上必须分开(所以纯派生方案自相矛盾),保留为"单写入者产出的投影",读取成本也更低(历史页一次 KV 读 vs 每片一次缓存读)。
+
+**审查(两轮只读)**:第一轮 1 高 3 中已修 —— ① `onSinkSave` 补 `ProgressSampling.switchInFlight(startedKey, progressKey)` 门禁(切换在途拒写:防把 A 内容的位置/百分比写到 B 内容的键上;任一 key 为 null 放行,保住"进直播前 detach 落盘""投屏只解析"等既有语义);② `markFinished` 同门禁(自动连播时同步链已清掉百分比,避免再写回 100% 残留;无下一集 key 未变仍写 100%);③ `PlaybackEngine.HeadlessView.startVideoPlayback` 补齐 `videoView.setProgressKey(...)` 并与两个页面桥同序(顺带修 `if (isSameStartedContent())` 在 `markContentStarted()` 之后恒真的同义反复,以及"无页面起播没有续播点");④ 超限淘汰按 `t`。第二轮 0 中/高,遗留 3 条低:队列写可能把同步 flush 的值回退 1%(旧代码同构)、`START_ABORT`/`ERROR` 不 flush(与旧控制器一致)、`switchInFlight` 与 `KernelReusePolicy.isCrossContentSwitch` 两套"切换"判据并存(更严格者用在写入点,统一留待后续)。
+
+**验证**:`.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL;**915 用例 / 0 失败 0 错误 1 跳过**(新增 `PlaybackProgressSamplerTest` 5 条、`PlaybackProgressTest` +4 条)。**装机未做**:2026-10-11 `adb devices` 为空(设备未在线),APK 已就绪 `app/build/outputs/apk/debug/AVBox_debug.apk`。代码未提交。
+
+**走查判据**见 `avbox-playback-service-spec.md` §4-21。
+
+**当日走查反馈补丁(用户报告"拖到 20 分钟立刻退出,历史百分比还是旧值 / 感觉要停留 5 秒才统计")**:根因两条、都在本次重构里 ——① **误删了"seek 立即落档"**:旧 `VideoPlayerController.savePlaybackProgress(seekTargetMs)` / `saveGestureProgress` 会让拖动结束时立刻写库,重构后只剩"播中每 5s"与"退出落档",于是拖动后立刻退出要靠退出那次写、且界面不刷新;**修法** = 拖动结束(进度条 / 手势 / 音乐页 seek)后页面调 `view.saveCurrentProgress()`(仍走 `ProgressSink` → 采样器,不引入页面写库),百分比写成功即发 `TYPE_HISTORY_REFRESH`;② **暂停/停止的 flush 只在"百分比变化时才发历史刷新事件"**(二轮审查把它记成"无可见影响",实测可见:值已写但历史页不刷新 ⇒ 看起来"没统计") —— 改为**采到有效样本就无条件发**(与旧控制器 `notifyHistory` 同义);sink 侧写成功也发。`echo-progress flush` 日志补 `written=` 便于走查。915 用例绿、`assembleDebug` 绿;仍未装机/未提交。
+
 ### 收藏页布局(三列/双列) + 偏好设置新增一项(2026-09-30)
 
 **现状**:收藏页列数 = `WindowSize.gridColumns(availableWidth, minColumns = 2)`(按宽度算、下限 2)⇒ 手机档恒双列。
@@ -5503,6 +5521,24 @@ echo-exo-selector: mime=video/avc preferSoft=false count=3 first=c2.qti.avc.deco
 **测试**:`PlayerHelperTest` +6 条(空名→UNKNOWN、软解名优先于 hw 标志、`softwareOnly` 优先、厂商名+hw→HARDWARE、厂商名无 hw→UNKNOWN);新增 `AudioDecoderLookupTest` 5 条契约用例(NULL format / 无 mime / 视频 mime / 非音频 mime → null、`decodeKind` 与 `choiceFor` 同名)。⚠️ **"真机能否查到解码器"在 JVM 里无法验证**:实测 Robolectric 的 `MediaCodecList` 是空壳(`count=0`,android-all 不随包 codec 配置),所以那条依赖真机的断言已删,只锁契约(与顶栏那次 `playerMmScale` 的教训同源:**环境档位不同,单测覆盖不到的现象必须靠真机日志**)。
 
 **验证**:`:app:testDebugUnitTest` + `:app:installDebug` → BUILD SUCCESSFUL,**891 用例 / 0 失败 0 错误 1 跳过**;已装机,真机 OSD 显示 `音频 mp4a.40.2 · 软解码 · c2.android.aac.decoder · 2.0 · 48kHz`,与日志 `source=live` 一致。
+
+## 详情页信息流重排:选集上移到线路/清晰度之前(2026-10-11,用户拍板)
+
+**诉求**:选集使用频率最高,要求提到线路之前。用户给定的目标顺序 = Hero 海报区 → 简介 → TMDB 信息区 → **选集** → 清晰度 → **线路** → 换源 → 相关推荐(与旧顺序的差别有两处:选集从第 3 个分区提到第 1 个;清晰度与线路相对顺序对调成 清晰度 → 线路)。
+
+**改动**:只动 `ui/activity/DetailContent.kt` 页面级 `LazyColumn` 的 item 排列(`episodes` 提到 `quality` / `flags` 之前),三个 item 的 `key` 与内部实现零改动。改动前核对:页面级列表没有按 `firstVisibleItemIndex` / 下标定位的逻辑(`scrollToItem` 全部在选集行 / 换源行 / 搜索 / 直播各自的子列表内部)⇒ 重排不影响滚动定位。活规范 `avbox-mobile-ui-spec.md` 的「信息流顺序」一句同步(连带两镜像)。
+
+**验证**:`:app:assembleDebug` → BUILD SUCCESSFUL(纯 UI 排列改动,按既有约定不跑单测);设备不在线未装机,待真机走查。
+
+## 详情页 Hero:播放胶囊 + 三颗圆钮的弹性按压(2026-10-11,用户拍板)
+
+**诉求**:用户先问「影视详情海报页的播放控件长按后有弹性缩放吗」→ 答"只有全站 2 倍涟漪、没有任何缩放"并列出可复用的两套(播放器覆盖层 `playerPressEffect` = 有回弹;海报卡 `PressableCard` = 无回弹)→ 用户回「播放胶囊和三颗圆扭加上」。
+
+**改动**:`ui/activity/DetailHero.kt` 两处 `.clickable(onClick = …)` → `.playerPressEffect(onTap = …)`,位置落在 `clip` / `background`(胶囊)与 `detailGlass`(圆钮)**之前** —— `graphicsLayer` 只作用于其后绘制的层,挂在后面会变成"底色不动、只有内容缩";零新增实现,直接复用 `player/ui/PlayerPressScale.kt`(`internal`、同模块可跨包引用,已有 `MusicPlayerScreen` 引 `player.ui.CastSheet` 的先例)。
+
+**两处口径差别(已在回复中向用户点明,可反悔)**:①`playerPressEffect` 是 `pointerInput` + `detectTapGestures`,**不带涟漪** ⇒ 这两个控件原有的 2 倍涟漪被替换(与播放器覆盖层"无涟漪 + 弹性"同款);要"涟漪 + 缩放"得另写 modifier,本轮未做。②缩放 = **整颗控件** 0.9 + `spring(dampingRatio = 0.75f, StiffnessMediumLow)`(约 9% 过冲),与 `PressableCard`(0.97、无过冲、带涟漪、用于海报卡)是两套,别混。③两者都没有长按动作 ⇒ 按住保持缩小态、抬手回弹,长按与单击一致。`pointerInput` 的键是 `hasLongClick` 常量 ⇒ 指针协程不会在按压途中被重启(既有教训);`graphicsLayer` 不改布局 ⇒ 位置与间距不抖动。
+
+**验证**:`:app:assembleDebug` BUILD SUCCESSFUL(纯 UI 改动,按约定未跑单测);设备不在线未装机。待真机走查:①幅度是否偏跳(0.9 对 180dp 胶囊 = 缩 18dp;对 52dp 圆钮 = 缩 5.2dp);②无涟漪的观感;③从胶囊/圆钮上起手滚动页面不受影响。
 
 
 

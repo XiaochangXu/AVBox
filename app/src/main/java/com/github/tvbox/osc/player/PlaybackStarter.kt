@@ -48,6 +48,8 @@ class PlaybackStarter(private val host: Host) {
 
         fun startedProgressKey(): String?
 
+        fun isSameContentRestart(): Boolean
+
         fun subtitleCacheKey(): String?
 
         fun setProgressKey(key: String?)
@@ -128,7 +130,8 @@ class PlaybackStarter(private val host: Host) {
         if (!prepareOnly) {
             st.switchingPlayback = true
             st.audioPlayback = false
-            host.view()?.onNewPlayStarted()
+            val sameContentRestart = !reset && host.isSameContentRestart()
+            host.view()?.onNewPlayStarted(sameContentRestart)
             host.view()?.clearArtwork()
         }
         val vs = host.currentSeries(host.vod()!!.playFlag, host.vod()!!.playIndex)
@@ -175,7 +178,7 @@ class PlaybackStarter(private val host: Host) {
         host.setProgressKey(host.vod()!!.sourceKey + host.vod()!!.id + host.vod()!!.playFlag + host.vod()!!.playIndex + vs.name)
         if (!prepareOnly) {
             WatchProgressStore.onPlayStart(host.progressKey())
-            PlaybackProgress.onEpisodeStartNoScroll()
+            PlaybackProgress.onEpisodeStartNoScroll(host.vod())
         }
         host.startResolvePlayUrlTimeout()
         if (st.pendingInheritProgress > 0 && !TextUtils.isEmpty(st.pendingInheritKey)) {

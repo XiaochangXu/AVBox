@@ -1,3 +1,9 @@
+## v1.2.3
+- 优化细节
+- 优化 R8 规则，减小应用体积
+- 完整更新日志详见三个alpha版本https://github.com/XiaochangXu/AVBox/releases
+---
+
 ## v1.2.3-alpha03
 > 此版本为测试版，可能存在不稳定问题。
 - 修复残留容器遮挡

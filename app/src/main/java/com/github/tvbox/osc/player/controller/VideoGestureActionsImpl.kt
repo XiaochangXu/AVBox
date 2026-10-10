@@ -12,7 +12,6 @@ import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.player.ui.VERBOSE_GESTURE_LOG
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.PlayerUtils
 
 internal class VideoGestureActionsImpl(private val host: VideoPlayerController) : VideoGestureActions {
 
@@ -114,9 +113,13 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
         if (host.isLocked) return
         val width = host.width
         if (width <= 0) return
-        val view = host.playerView ?: return
-        val duration = PlayerUtils.safeTimeMs(view.duration)
-        val current = PlayerUtils.safeTimeMs(view.currentPosition)
+        val snapshot = host.progressSnapshot()
+        if (snapshot == null) {
+            seekTargetMs = -1
+            return
+        }
+        val duration = snapshot.durationMs
+        val current = snapshot.positionMs
         var target = (totalDeltaX / width * slideFullWidthMs + current).toInt()
         if (target > duration) target = duration
         if (target < 0) target = 0
@@ -129,8 +132,9 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
         val target = seekTargetMs
         seekTargetMs = -1
         if (target < 0) return
+        if (host.progressSnapshot() == null) return
         host.seekToFromGesture(target.toLong())
-        host.saveGestureProgress(target)
+        host.saveProgressFromView()
     }
 
     override fun onSeekCancel() {

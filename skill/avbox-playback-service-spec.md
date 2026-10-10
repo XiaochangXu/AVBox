@@ -25,6 +25,7 @@
 | `PlaybackService` | `player/PlaybackService.kt` | 前台服务(FGS `mediaPlayback`);**托管引擎生命周期**;媒体会话/通知/wake+wifi 锁;通知栏动作入口;**任务移除 = 完整释放引擎;服务被系统回收 = 按预热开关决定保留内核**(见 §3.3) |
 | `PlaybackEngine` | `player/PlaybackEngine.kt` | **持有** `MyVideoView` + `PlaybackController`;**挂摘协议**主体(attach/detach/detachForHandover);空闲释放;内核预热;直播人格切换;无页面时实现 `PlaybackHostApi` + `HeadlessView` 桥 |
 | `PlaybackController` | `player/PlaybackController.kt` | 会话与派生数据层:播什么(vod/`sourceKey`/`sourceBean`/播放器配置)、进度键与缓存键、清晰度、投屏地址改写、**已起播内容归属**;视图交互一律经 `PlaybackViewBridge` |
+| `PlaybackProgressSampler` | `player/PlaybackProgressSampler.kt` | **进度统计的单一写入者**(2026-10-11):播放中每 5s 采样写续播位置 + 历史百分比(经 `ProgressSink` 的显式落盘点也走它);暂停/停止 flush;完成标记 100%;门禁 `ProgressSampling`(纯函数) |
 | `PlayUrlResolver` | `player/PlayUrlResolver.kt` | 取流/解析/嗅探调度(WebView 嗅探 + json/聚合/超级解析 + **代际闸门**) |
 | `PlaybackRetryDelegate` | `player/PlaybackRetryDelegate.kt` | 重试与换线:同址重播、硬解→软解回退、自动切内核、下一条线路;取流超时/失败/换线超时三处入口 |
 | `PlaybackFetch` | `player/PlaybackFetch.kt` | 取流结果观察者:收集 `SourceChannel.flow`,把结果落到会话数据(清晰度/进度键/字幕/歌词/封面) |
@@ -121,7 +122,19 @@ PlaybackService(前台服务,托管生命周期)
 - **服务常驻语义**:`onStartCommand` 恒返回 `START_NOT_STICKY`(进程被回收后引擎已不存在,重启服务只会留下空壳);`onTaskRemoved`(用户划掉任务)= 停会话 + `stopSelf`,销毁时 `releaseEngine()` **完整释放**(`echo-p2 engine released (task removed)`)。
 - **服务被系统回收时的内核去留**(2026-10-09):`onDestroy` 不再无条件释放,停会话后调 `PlaybackEngine.keepKernelAfterServiceDestroy()` —— **总闸是内核预热开关**(与空闲释放同口径):预热关或直播态(`liveMode`)⇒ 完整 `release()`(回前台重建,日志 `engine released (service destroyed, keep off)`);预热开 ⇒ 保留内核并**先停播再保留**(在播则 `pause()`,否则服务已撤通知却仍出声)。保留期间只做不触碰内核与会话状态的轻量清理(`stopParse` + `stopLoadWebView(true)`);取流观察者与预载**刻意不销毁** —— `releaseFetch()`/`destroyPreload()` 之后没有重建路径(仅 `PlaybackEngine.init` 会 `initFetch`/`initPreload`),调了会让回前台起播的取流结果无处投递、预载永久失效。保留态下 `PlaybackService.updateSession` 遇 `isServiceLostKept()` 直接跳过,防 pause 派发的状态更新把刚被回收的服务重新拉起(Android 12+ 抛 FGS 异常/留下 `pendingStart`)。页面回来(`PlayContainer.hostResume` / 音乐页 `MusicHost.hostResume`)调 `consumeServiceLostKeep(resumePlayback)`:复位标记、按需恢复被停播放、并触发一次会话更新让服务/通知重建;新页面 `attach` 也清标记但**不**恢复播放。保留态**没有独立保底计时**(原 15min 方案已废):回收触发器 = 页面 `detach`(60s 空闲,预热开则抑制) / 划掉任务(立即) / 关闭预热后的服务回收(立即)。动机:该路径曾无视预热开关强杀内核(真机取证 `host onDestroy` → 回前台 `engine create`),与"预热 = 空闲常驻"语义冲突。
 
-### 3.4 进度落盘(四处)与复用重播恢复点
+### 3.4 进度落盘与统计(单一写入者)与复用重播恢复点
+
+**写入者唯一 = `PlaybackProgressSampler`**(引擎持有,`player/PlaybackProgressSampler.kt`;2026-10-11):页面不再参与进度统计 —— `VideoPlayerController` 只留 UI 心跳(其 `PlaybackProgress` 调用与 `savePlaybackProgress` 已删)。音乐播放页、无页面(无头)起播因此**自动**被统计,不再有"某个播放壳忘记接统计"这一类缺口。
+
+- **周期采样**:播放中每 5s 一次,同一份样本(position/duration)同时落两处 —— `WatchProgressStore.save`(续播位置,写 `vod-progress-writer` 线程)与 `PlaybackProgress.onProgress`(历史百分比,写 `playback-progress` 线程;内部仍按 ≥5s / 百分比变化节流,并共用 `WatchProgressRules` 的 30s 门槛)。
+- **状态点**:`PAUSED`/`IDLE` → flush(位置 + 百分比)并**无条件发** `TYPE_HISTORY_REFRESH`(旧控制器 `notifyHistory` 同义:只要采到有效样本就通知界面,否则"位置/百分比已更新但历史页显示不动"会像没统计);`COMPLETED` → `PlaybackProgress.markFinished`(100%;无下一集时保留,自动连播时该标题百分比已由起播清掉);直播态 → 不采样不落盘。
+- **用户主动操作立即落档**:拖动进度条结束(进度条 / 手势 seek / 音乐页 seek)后页面只调 `view.saveCurrentProgress()`(走 `ProgressSink` → 采样器),百分比写成功即发 `TYPE_HISTORY_REFRESH` —— **不依赖 5s 周期**,所以"拖到 20 分钟立刻退出"落的就是 20 分钟(2026-10-11 补;该行为在早先版本存在,重构时被误删)。
+- **门禁**(纯函数 `ProgressSampling`,有单测):`shouldWrite`(仅 `PLAYING` + 正在播 + `isSameStartedContent()` + 非直播)、`switchInFlight(startedKey, progressKey)`(两键都已知且不同 = 切换在途 ⇒ 拒绝写入,防把 A 内容的进度写到 B 内容的键上;任一为 null 放行,保留"进直播前 detach 落盘""投屏只解析"等既有语义)。
+- **百分比 KV 值格式**(2026-10-11):`{"p":percent,"d":durationMs,"t":at}`;读取兼容旧的纯 int;超限淘汰按 `t` 升序(旧格式视为 0,先淘汰)。
+- **清百分比**的唯一入口仍是起播: `PlaybackStarter.play()` → `PlaybackProgress.onEpisodeStartNoScroll(vod)`(无痕模式下早退,不再改动既有数据)。
+- 位置落盘的两个入口(下面四处显式点 + 上面的周期采样)共用 `ProgressSink` 的既有口径,内核/直播语义见本节后半。
+
+**位置落盘四处(原有语义不变)**:
 
 1. **切集/换源前**(键易主前先落旧键);
 2. **页面 detach 时**显式 `saveCurrentProgress()`(不 release 就没人触发落盘);
@@ -213,6 +226,8 @@ PlaybackService(前台服务,托管生命周期)
 19. 服务被系统回收后的内核去留(2026-10-09,预热开关为总闸):预热**开**时暂停态退后台等 `host onDestroy` → 回前台应直接续播、日志**无** `engine create`/`codec-init`(取证 `engine kept (service destroyed, page=true, playing=false)`);回前台时**应恰好出现一次** `session update with no live service → startForegroundService`,这是 `consumeServiceLostKeep` 主动重建服务/通知的**预期**路径(**仅限回前台这一次**;若出现在"退后台瞬间"才是 pause 派发反向拉起服务的缺陷);预热**关**时同一路径应看到 `engine released (service destroyed, keep off)` 且回前台正常重建(**限 VOD / 直播页**;音乐页在该路径下 `onServiceStopped` 只撤回调、页内无引擎复活入口,属**已知限制**,见 §6 R10);划掉任务始终看到 `engine released (task removed)`;另需确认回前台首帧无"有声无画"(`rebuildRenderView` 新建 Surface 到 `surfaceCreated` 之间的窗口内起播,见 R10)。
 
 20. 投屏「只解析」加固(2026-10-09,见 §3.9):海报页投屏(普通源 / M3U8 净化开 / 附近TVBox 推送)能拿到地址、能弹列表、能推成功;全屏与音乐页投屏成功后本地暂停不变;**投屏被放弃或超时后本地绝不出声** —— 专项 = 自动换线开 + 慢源(解析 >15 秒)投屏,判据 = **无声音** + 收摊链日志按序出现(`echo-cast prepare end` → `echo-cast abort set: ...` → 迟到地址到达时 `echo-cast abort: drop late play url`) + 丢弃之后**没有起播证据**(`echo-setDataSource` / `codec-init`)。注意两条容易读错的:① 收摊已取消 15s/20s 定时器、drop 闸门又在重试入口之前,所以 `echo-resolvePlayUrl timeout` / `echo-autoRetry` **不应**出现(出现才是问题);② `echo-goPlayUrl:` 打在入口判定之前,竞态下会与 `drop late play url` 同时出现 —— 它本身不算起播。**放弃投屏后这些"用户起播"入口逐个走一遍,都必须正常起播**(清除点最容易漏的地方):海报页播放胶囊 / 选集卡 / 画质胶囊、全屏「刷新」与上一集·下一集、通知栏 NEXT/PREV、换解析接口、换源、音乐页交接;关弹窗后手点播放同理、进度正确。
+
+21. **进度统计单一写入者(2026-10-11,见 §3.4)**:① 音乐播放页听歌 ≥30s → 回历史页该条**出现百分比**,页内换集后该百分比先清、新歌 ≥30s 后重新增长;**①-1 拖动进度条到任意位置后立刻退出**(60 分钟片拖到 20 分钟)→ 历史百分比应立刻变为 ≈33%、续播点=20 分钟(判据:退出后历史行百分比与再进播放的续播位置都等于新位置;日志 `echo-progress flush`/`echo-progress sample` 紧随 seek 出现);② 音乐页暂停/退出 → 百分比停在当前歌位置;③ 自动连播(影视)后历史**不得**残留 100%(应回落到 N/总数),播完最后一集则保留 100%;④ 开无痕听歌/看片 → 历史与百分比**不被改写**、也不清掉既有记录(关掉无痕后旧百分比仍在);⑤ 无页面起播(详情页交出后由通知/预载/换线继续起的路径)退出后**有**续播点;⑥ 旧装机升级后旧百分比**不丢**(纯 int 值按 0 时间戳参与淘汰,只在超 100 条时先被淘汰);⑦ 切片日志:播放中 `echo-progress sample`(每 5s 一条)、暂停/退出 `echo-progress flush`、`echo-progress finished`、切换在途时 `echo-progress sink skipped` / `echo-progress finished skipped`。
 
 ## 5. 设计决策记录
 
@@ -313,4 +328,5 @@ fongmi 的关键实现点(仍具参考价值):服务侧建/释放内核、`bindP
 | 2026-10-09 | **服务被系统回收时按预热开关决定内核去留(用户拍板,含一轮审查修复)**:`PlaybackService.onDestroy` 不再无条件 `releaseEngine()`,停会话后调 `PlaybackEngine.keepKernelAfterServiceDestroy()` —— 预热关/直播态完整释放,预热开保留内核(**先 `pause()` 再保留**,避免无通知后台出声);保留态 `updateSession` 经 `isServiceLostKept()` 跳过启动(防 pause 派发的状态更新反向拉起服务,Android 12+ 会抛 FGS 异常);页面回来 `consumeServiceLostKeep(resumePlayback)` 复位/恢复/触发一次会话更新,新页面 `attach` 只清标记;轻量清理仅 `stopParse` + `stopLoadWebView(true)`(取流观察者与预载刻意保留,`releaseFetch`/`destroyPreload` 无重建路径不可调)。§1/§3.3/§4-19/R10 已同步。动机:该路径曾无视预热开关强杀内核(真机取证 `host onDestroy` → 回前台 `engine create`/`codec-init`) |
 | 2026-10-09 | **投屏「只解析」加固(预防性,用户报告"投屏有概率出声"当日未复现)**:新增会话级 `castAborted`(置位点唯一 = `closeCastPrepare()`)—— 收摊后迟到地址与自动重试一律拒绝,直到新一轮 `setData`(`beginSession()`)或用户起播入口清除;`endCastPrepare()` 补 `cancelPlayTimeout()`(此前只有 `abortIfCastPrepare` 那条有)。§3.9 新增,§4-20 走查项;800 例单测绿,未装机 |
 | 2026-10-09 | 上条的**第二轮审查**(独立只读 + 文档对账):代码侧无阻断/高/中(修复轮的 5 个清除点经逐条调用方追溯,无自动路径能清标记;上一轮中级四条入口全部闭合);修文档判据 3 处 —— 净化**启动**/无页面交付不在拦截面(收窄 + 登记脆弱点)、§4-20 删除"不可能出现的伴随日志"(`echo-resolvePlayUrl timeout` / `echo-autoRetry` 被 `cancelPlayTimeout` 与 drop 闸门挡在之前)、`echo-goPlayUrl:` 改为"其后不得出现起播证据"(它打在入口判定之前,竞态下会与 `drop late play url` 同时出现);另补 `castAborted` 加 `@Volatile`(goPlayUrl 入口可在解析线程池读它)、单测补 `userSelfRescue()` 不入复位清单、`SKILL.md` 文档地图 §4 编号补 19/20、`avbox-mobile-ui-spec.md` §4.4 补 §3.9 交叉引用 |
+| 2026-10-11 | **进度统计收敛为引擎级单写入者(步 1+步 2,用户拍板)**:新增 `PlaybackProgressSampler`(引擎持有),播放中每 5s 采样、暂停/停止 flush、完成 `markFinished`;`VideoPlayerController` 的 `PlaybackProgress` 调用与 `savePlaybackProgress` 整体删除(`PlayerActionsDelegate`/`VideoGestureActionsImpl` 连带清理);`PlaybackProgress` 写入口改显式 `VodInfo` 入参(不再经 `PlaybackPorts.currentVod` 归属)、KV 值升级为 `{p,d,t}`(兼容旧 int、按 `t` 淘汰)、无痕模式不再清数据;`PlaybackEngine.HeadlessView.startVideoPlayback` 补齐 `setProgressKey` 并与页面桥同序(修"无页面起播无续播点"与同义反复的 `isSameStartedContent` 判定);门禁 `ProgressSampling.shouldWrite`/`switchInFlight`(切换在途拒写,防跨内容串写)。§1 组件表 / §3.4 / §4-21 已同步;915 例单测绿,未装机 |
 | 2026-10-09 | 上条的**审查修复轮**(两轮只读审查 + 复核):补 4 个"用户起播"清除点 —— `PlaybackController.play()` / `selectQuality()`(先清再转调,净化关时同步交付) / `doParse()` + `PlayContainer.replayCurrentAddress()`(画质胶囊、全屏刷新、上一集/下一集含通知栏、换解析此前会被静默丢弃,属中级本次引入);§3.9 同步改写(清除点清单 + "五个入口统一不重试"措辞改正 + 日志前缀写全),§4-20 补清除点必走清单;`LOG.FILE_LOG_PREFIXES` 再补 `echo-resolvePlayUrl` / `echo-playM3u8`(归因侧证据)。登记不修:drop 分支附带的提示/会话收摊、`castAborted` 非 volatile、clear 不作废在途交付、`PlaybackFetch.handlePlayResult` 副作用面、缺静态判据 |

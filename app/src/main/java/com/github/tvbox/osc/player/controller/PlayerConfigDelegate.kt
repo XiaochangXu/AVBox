@@ -228,16 +228,16 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
     }
 
     fun markTimeStart() {
-        val view = host.videoView ?: return
-        val current = PlayerUtils.safeTimeMs(view.currentPosition)
-        if (current > PlayerUtils.safeTimeMs(view.duration) / 2) return
+        val snapshot = host.progressSnapshot() ?: return
+        val current = snapshot.positionMs
+        if (current > snapshot.durationMs / 2) return
         setTimeMark("st", current / 1000)
     }
 
     fun markTimeEnd() {
-        val view = host.videoView ?: return
-        val current = PlayerUtils.safeTimeMs(view.currentPosition)
-        val duration = PlayerUtils.safeTimeMs(view.duration)
+        val snapshot = host.progressSnapshot() ?: return
+        val current = snapshot.positionMs
+        val duration = snapshot.durationMs
         if (current < duration / 2) return
         setTimeMark("et", (duration - current) / 1000)
     }

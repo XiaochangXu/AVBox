@@ -513,6 +513,11 @@ class PlaybackController {
 
     fun startedPlaybackKey(): String? = progress.startedPlaybackKey()
 
+    fun startedProgressKey(): String? = progress.startedProgressKey()
+
+    fun isSameContentRestart(): Boolean =
+        ProgressSampling.sameContentRestart(progress.startedPlaybackKey(), currentSession?.playbackKey())
+
     fun isSameStartedContent(): Boolean = progress.isSameStartedContent()
 
     fun initFetch() {
@@ -607,6 +612,8 @@ class PlaybackController {
         override fun progressOwner(): String? = this@PlaybackController.progressOwner()
 
         override fun startedProgressKey(): String? = progress.startedProgressKey()
+
+        override fun isSameContentRestart(): Boolean = this@PlaybackController.isSameContentRestart()
 
         override fun subtitleCacheKey(): String? = this@PlaybackController.subtitleCacheKey()
 

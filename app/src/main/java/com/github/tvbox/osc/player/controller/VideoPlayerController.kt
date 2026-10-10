@@ -16,8 +16,6 @@ import androidx.media3.ui.SubtitleView
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.SourceBean
-import com.github.tvbox.osc.data.PlaybackProgress
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.AppPlayerView
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.state.LockVisibility
@@ -34,7 +32,6 @@ import com.github.tvbox.osc.util.DanmuHelper
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
 import com.github.tvbox.osc.util.SubtitleHelper
-import org.greenrobot.eventbus.EventBus
 import org.json.JSONObject
 import java.util.HashMap
 
@@ -103,8 +100,8 @@ class VideoPlayerController(
         actions.keepControlsAlive()
     }
 
-    internal fun saveGestureProgress(targetMs: Int) {
-        savePlaybackProgress(notifyHistory = true, seekTargetMs = targetMs)
+    internal fun saveProgressFromView() {
+        videoView?.saveCurrentProgress()
     }
 
     internal fun showSlideHint(text: String, brightness: Boolean) {
@@ -184,12 +181,14 @@ class VideoPlayerController(
     private var progressTicking = false
     private val progressRunnable by lazy { Runnable { onProgressTick() } }
 
-    /** 本轮内容已下发给播放器的地址，用于识别切换途中的陈旧进度数据。 */
     private var contentUrl: String? = null
 
-    /** 内容地址下发到播放器时记录，供进度回调判断数据是否已属于新内容。 */
+    private var progressPhase = ProgressPhase.IDLE
+
     override fun onContentUrlSet(url: String?) {
-        if (!url.isNullOrEmpty()) contentUrl = url
+        if (url.isNullOrEmpty()) return
+        contentUrl = url
+        progressPhase = ProgressPhase.ACTIVE
     }
     internal val idleHideRunnable by lazy {
         Runnable {
@@ -329,25 +328,23 @@ class VideoPlayerController(
 
     private fun applyPlayState(playState: PlayState) = when (playState) {
         PlayState.IDLE -> {
-            savePlaybackProgress(notifyHistory = true)
             state.locked = false
+            progressPhase = ProgressPhase.IDLE
         }
         PlayState.PLAYING -> {
             state.exitPaused = false
             initOrientationState()
             startProgress()
         }
-        PlayState.PAUSED -> {
-            savePlaybackProgress(notifyHistory = true)
-        }
         PlayState.ERROR -> listener?.errReplay()
         PlayState.PREPARED -> listener?.prepared()
         PlayState.COMPLETED -> {
             state.locked = false
-            PlaybackProgress.markFinished()
             listener?.playNext(true)
         }
-        PlayState.PREPARING, PlayState.BUFFERING, PlayState.BUFFERED, PlayState.START_ABORT -> Unit
+        PlayState.PREPARING, PlayState.BUFFERING, PlayState.BUFFERED,
+        PlayState.START_ABORT, PlayState.PAUSED,
+        -> Unit
     }
 
     override fun setPlayerState(playerState: Int) {
@@ -365,11 +362,37 @@ class VideoPlayerController(
         videoSizeGate.onKernelContentReplaced()
     }
 
+    internal fun progressSnapshot(): ProgressSnapshot? {
+        val view = videoView ?: return null
+        if (!ProgressUiGate.accept(progressPhase, contentUrl, view.currentUrl)) return null
+        return ProgressSnapshot(
+            durationMs = PlayerUtils.safeTimeMs(view.duration),
+            positionMs = PlayerUtils.safeTimeMs(view.currentPosition),
+            bufferedPercent = runCatching { view.bufferedPercentage }.getOrDefault(0),
+        )
+    }
+
     private fun onProgressTick() {
         progressTicking = false
         val view = videoView
-        if (view != null && !state.dragging) {
-            onProgressTick(view.duration, view.currentPosition)
+        val snapshot = if (view != null && !state.dragging) progressSnapshot() else null
+        LOG.i(
+            "echo-progress-tick: accepted=${snapshot != null} phase=$progressPhase"
+                + " uiPosition=${state.position} uiDuration=${state.duration}"
+                + " rawDuration=${snapshot?.durationMs} rawPosition=${snapshot?.positionMs}"
+                + " playing=${view?.isPlaying} state=${view?.playState}",
+        )
+        if (snapshot != null) {
+            if (snapshot.durationMs > 0) state.duration = snapshot.durationMs
+            if (snapshot.positionMs > 0 || snapshot.durationMs > 0) state.position = snapshot.positionMs
+            state.bufferedPercent = snapshot.bufferedPercent
+            if (skipEnd && snapshot.positionMs != 0 && snapshot.durationMs != 0) {
+                val et = playerConfig?.optInt("et", 0) ?: 0
+                if (et > 0 && snapshot.positionMs + et * 1000 >= snapshot.durationMs) {
+                    skipEnd = false
+                    listener?.playNext(true)
+                }
+            }
         }
         if (state.dragging) return
         if (view?.isPlaying != true) return
@@ -377,34 +400,6 @@ class VideoPlayerController(
         val speed = view.speed.takeIf { it > 0f } ?: 1f
         val delayMs = ((1000 - state.position % 1000) / speed).toLong().coerceAtLeast(1L)
         uiHandler.postDelayed(progressRunnable, delayMs)
-    }
-
-    private fun onProgressTick(duration: Long, position: Long) {
-        val durationMs = PlayerUtils.safeTimeMs(duration)
-        val positionMs = PlayerUtils.safeTimeMs(position)
-        // 内容切换途中播放器仍装着上一部影片的媒体项，此时 duration/currentPosition 会如实
-        // 返回旧值。若直接写进 UI，进度条会闪回上一部影片的位置。
-        // setUrl 已在内容替换时把新地址记入 contentUrl，因此与播放器当前地址不一致即为陈旧数据。
-        val staleContent = contentUrl == null || !contentUrl.contentEquals(videoView?.currentUrl)
-        LOG.i(
-            "echo-progress-tick: rawDuration=$durationMs rawPosition=$positionMs"
-                + " uiPosition=${state.position} uiDuration=${state.duration}"
-                + " stale=$staleContent playing=${videoView?.isPlaying}"
-                + " state=${videoView?.playState}",
-        )
-        if (!staleContent) {
-            if (durationMs > 0) state.duration = durationMs
-            if (positionMs > 0 || durationMs > 0) state.position = positionMs
-        }
-        PlaybackProgress.onProgress(positionMs, durationMs)
-        if (skipEnd && positionMs != 0 && durationMs != 0) {
-            val et = playerConfig?.optInt("et", 0) ?: 0
-            if (et > 0 && positionMs + et * 1000 >= durationMs) {
-                skipEnd = false
-                listener?.playNext(true)
-            }
-        }
-        state.bufferedPercent = runCatching { videoView?.bufferedPercentage ?: 0 }.getOrDefault(0)
     }
 
     override fun startProgress() {
@@ -417,31 +412,6 @@ class VideoPlayerController(
         if (!progressTicking) return
         uiHandler.removeCallbacks(progressRunnable)
         progressTicking = false
-    }
-
-    internal fun savePlaybackProgress(notifyHistory: Boolean, seekTargetMs: Int = -1) {
-        val viewDuration = runCatching { videoView?.duration ?: 0L }.getOrDefault(0L).toInt()
-        val viewPosition = runCatching { videoView?.currentPosition ?: 0L }.getOrDefault(0L).toInt()
-        // viewDuration 为 0 说明换内容后还没就绪：此时 viewPosition 与 state.* 都可能属于上一部
-        // 影片，落库等于把旧进度写成新影片的进度。仅显式 seek 目标可以放行。
-        if (viewDuration <= 0 && seekTargetMs < 0) {
-            LOG.i("echo-progress-save: skip unresolved content viewDuration=$viewDuration")
-            return
-        }
-        val duration = if (viewDuration > 0) viewDuration else state.duration
-        val position = when {
-            seekTargetMs >= 0 -> seekTargetMs
-            viewDuration > 0 -> viewPosition
-            else -> state.position
-        }
-        LOG.i(
-            "echo-progress-save: viewDuration=$viewDuration viewPosition=$viewPosition"
-                + " uiPosition=${state.position} uiDuration=${state.duration}"
-                + " usedDuration=$duration usedPosition=$position",
-        )
-        if (duration <= 0) return
-        PlaybackProgress.flush(position, duration)
-        if (notifyHistory) EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
     }
 
     internal fun updateSeekUiHint(curr: Int, seekTo: Int) {
@@ -550,8 +520,16 @@ class VideoPlayerController(
 
     override fun hidePauseRoot() = Unit
 
-    override fun onNewPlayStarted() {
+    override fun onNewPlayStarted(sameContent: Boolean) {
         state.exitPaused = false
+        if (sameContent) {
+            LOG.i(
+                "echo-progress-reset: same content restart, keep uiPosition=${state.position}"
+                    + " uiDuration=${state.duration}",
+            )
+            return
+        }
+        progressPhase = ProgressPhase.LOADING
         val size = runCatching { videoView?.videoSize }.getOrNull() ?: intArrayOf(0, 0)
         LOG.i(
             "echo-progress-reset: onNewPlayStarted cleared uiPosition=${state.position}"

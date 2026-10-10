@@ -148,6 +148,32 @@ internal fun DetailContent(
             TmdbInfoSection(info.name, info.year)
         }
 
+        if (episodes.isNotEmpty()) {
+            item(key = "episodes") {
+                EpisodeRow(vm, info, episodes, playIndex, currentFlag)
+            }
+        }
+
+        if (qualityOptions.size > 1) {
+            item(key = "quality") {
+                ChipRow(
+                    title = stringResource(R.string.detail_quality),
+                    leading = { SectionTitleIcon(painterResource(R.drawable.ic_detail_quality)) },
+                ) {
+                    itemsIndexed(qualityOptions) { index, option ->
+                        FilterChip(
+                            selected = index == qualitySelected,
+                            onClick = { vm.onQualityClick(index, activity.playbackFacts()) },
+                            label = { Text(option) },
+                            shape = RoundedCornerShape(20.dp),
+                            border = detailChipBorder(selected = index == qualitySelected),
+                            colors = detailChipColors(),
+                        )
+                    }
+                }
+            }
+        }
+
         if (flags.isNotEmpty()) {
             item(key = "flags") {
                 Column(
@@ -194,32 +220,6 @@ internal fun DetailContent(
                         }
                     }
                 }
-            }
-        }
-
-        if (qualityOptions.size > 1) {
-            item(key = "quality") {
-                ChipRow(
-                    title = stringResource(R.string.detail_quality),
-                    leading = { SectionTitleIcon(painterResource(R.drawable.ic_detail_quality)) },
-                ) {
-                    itemsIndexed(qualityOptions) { index, option ->
-                        FilterChip(
-                            selected = index == qualitySelected,
-                            onClick = { vm.onQualityClick(index, activity.playbackFacts()) },
-                            label = { Text(option) },
-                            shape = RoundedCornerShape(20.dp),
-                            border = detailChipBorder(selected = index == qualitySelected),
-                            colors = detailChipColors(),
-                        )
-                    }
-                }
-            }
-        }
-
-        if (episodes.isNotEmpty()) {
-            item(key = "episodes") {
-                EpisodeRow(vm, info, episodes, playIndex, currentFlag)
             }
         }
 

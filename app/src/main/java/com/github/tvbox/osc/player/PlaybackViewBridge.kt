@@ -62,7 +62,7 @@ interface PlaybackViewBridge {
 
     fun setSubtitleViewVisible(visible: Boolean)
 
-    fun onNewPlayStarted()
+    fun onNewPlayStarted(sameContent: Boolean)
 
     fun applyPlayerConfigToView(forceKernel: Int)
 

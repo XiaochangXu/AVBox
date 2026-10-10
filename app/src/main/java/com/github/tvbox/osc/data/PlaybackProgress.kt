@@ -1,8 +1,11 @@
 package com.github.tvbox.osc.data
 
+import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -11,7 +14,7 @@ object PlaybackProgress {
 
     private const val KEY = "playback_progress"
 
-    private const val LIMIT = 300
+    private const val LIMIT = WatchProgressIndex.MAX_TITLES
 
     private const val MIN_INTERVAL_MS = 5_000L
 
@@ -44,13 +47,14 @@ object PlaybackProgress {
         if (HistoryHelper.isIncognito()) return emptyMap()
         return read()
             .mapNotNull { (key, value) ->
-                value.toIntOrNull()?.takeIf { it in 0..100 }?.let { key to it }
+                decodePercent(value)?.takeIf { it in 0..100 }?.let { key to it }
             }
             .toMap()
     }
 
-    fun onEpisodeStart(scrollToTop: Boolean) {
-        val id = currentKey() ?: return
+    fun onEpisodeStart(vod: VodInfo?, scrollToTop: Boolean) {
+        if (HistoryHelper.isIncognito()) return
+        val id = currentKey(vod) ?: return
         val cleared = forget(id)
         val event = if (scrollToTop) {
             RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH)
@@ -61,12 +65,12 @@ object PlaybackProgress {
     }
 
     @JvmStatic
-    fun onEpisodeStartNoScroll() = onEpisodeStart(false)
+    fun onEpisodeStartNoScroll(vod: VodInfo?) = onEpisodeStart(vod, false)
 
-    fun onProgress(positionMs: Int, durationMs: Int) {
-        val id = currentKey() ?: return
+    fun onProgress(vod: VodInfo?, positionMs: Int, durationMs: Int) {
+        val id = currentKey(vod) ?: return
         WatchProgressStore.noteDuration(id, durationMs.toLong())
-        markWatched(positionMs, durationMs)
+        markWatched(vod, positionMs, durationMs)
         if (WatchProgressRules.decide(positionMs.toLong(), durationMs.toLong()) == WatchDecision.SKIP) return
         val percent = calcPercent(positionMs, durationMs) ?: return
         val now = System.currentTimeMillis()
@@ -74,31 +78,33 @@ object PlaybackProgress {
         lastKey = id
         lastSavedAt = now
         lastSavedPercent = percent
-        writer.execute { write(id, percent) }
+        writer.execute { write(id, percent, durationMs, now) }
     }
 
-    fun flush(positionMs: Int, durationMs: Int): Boolean {
-        val id = currentKey() ?: return false
-        markWatched(positionMs, durationMs)
+    fun flush(vod: VodInfo?, positionMs: Int, durationMs: Int): Boolean {
+        val id = currentKey(vod) ?: return false
+        markWatched(vod, positionMs, durationMs)
         watchedToken = ""
         sampleToken = ""
         advancedMs = 0
         if (WatchProgressRules.decide(positionMs.toLong(), durationMs.toLong()) == WatchDecision.SKIP) return false
         val percent = calcPercent(positionMs, durationMs) ?: return false
         if (id == lastKey && percent == lastSavedPercent) return false
-        if (!write(id, percent)) return false
+        val now = System.currentTimeMillis()
+        if (!write(id, percent, durationMs, now)) return false
         lastKey = id
-        lastSavedAt = System.currentTimeMillis()
+        lastSavedAt = now
         lastSavedPercent = percent
         return true
     }
 
-    fun markFinished() {
-        val id = currentKey() ?: return
+    fun markFinished(vod: VodInfo?) {
+        val id = currentKey(vod) ?: return
         if (id == lastKey && lastSavedPercent == 100) return
-        if (!write(id, 100)) return
+        val now = System.currentTimeMillis()
+        if (!write(id, 100, 0, now)) return
         lastKey = id
-        lastSavedAt = System.currentTimeMillis()
+        lastSavedAt = now
         lastSavedPercent = 100
         EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
     }
@@ -109,8 +115,8 @@ object PlaybackProgress {
     fun shouldMarkWatched(advancedMs: Int, token: String, lastToken: String): Boolean =
         token != lastToken && advancedMs >= MIN_ADVANCE_MS
 
-    private fun markWatched(positionMs: Int, durationMs: Int) {
-        val vod = PlaybackPorts.currentVod?.invoke() ?: return
+    private fun markWatched(vod: VodInfo?, positionMs: Int, durationMs: Int) {
+        if (vod == null) return
         if (PlaybackPorts.isLiveMode?.invoke() == true) return
         val token = key(vod.sourceKey, vod.id) + "#" + vod.playFlag + "#" + vod.playIndex
         if (token != sampleToken) {
@@ -132,18 +138,51 @@ object PlaybackProgress {
         return (positionMs.toLong() * 100 / durationMs).toInt().coerceIn(0, 100)
     }
 
-    private fun currentKey(): String? {
-        val vod = PlaybackPorts.currentVod?.invoke() ?: return null
+    private fun currentKey(vod: VodInfo?): String? {
+        if (vod == null) return null
         if (vod.sourceKey.isNullOrEmpty() || vod.id.isNullOrEmpty()) return null
         return key(vod.sourceKey, vod.id)
     }
 
+    internal fun encodeEntry(percent: Int, durationMs: Int, at: Long): String {
+        val obj = JsonObject()
+        obj.addProperty("p", percent)
+        if (durationMs > 0) obj.addProperty("d", durationMs)
+        obj.addProperty("t", at)
+        return obj.toString()
+    }
+
+    internal fun decodePercent(raw: String?): Int? {
+        if (raw.isNullOrEmpty()) return null
+        raw.toIntOrNull()?.let { return it }
+        return try {
+            JsonParser.parseString(raw).asJsonObject.get("p")?.asInt
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    internal fun decodeSavedAt(raw: String?): Long {
+        if (raw.isNullOrEmpty()) return 0L
+        if (raw.toIntOrNull() != null) return 0L
+        return try {
+            JsonParser.parseString(raw).asJsonObject.get("t")?.asLong ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    internal fun pickEvictions(entries: Map<String, String>, limit: Int): List<String> {
+        if (entries.size <= limit) return emptyList()
+        return entries.entries.sortedBy { decodeSavedAt(it.value) }.take(entries.size - limit).map { it.key }
+    }
+
     @Synchronized
-    private fun write(id: String, percent: Int): Boolean {
+    private fun write(id: String, percent: Int, durationMs: Int, at: Long): Boolean {
         if (HistoryHelper.isIncognito()) return false
         val map = read()
-        map[id] = percent.toString()
-        if (map.size > LIMIT) map.keys.take(map.size - LIMIT).forEach { map.remove(it) }
+        map[id] = encodeEntry(percent, durationMs, at)
+        pickEvictions(map, LIMIT).forEach { map.remove(it) }
         return KV.put(KEY, map)
     }
 
