@@ -1,5 +1,8 @@
 package com.github.tvbox.osc.player.ui
 
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -7,6 +10,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -14,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +37,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -49,19 +54,25 @@ import com.github.tvbox.osc.util.PlayerUtils.stringForTime
 
 private const val SEEK_MAX = 1000
 
-// 诊断用：上一次实际绘制的进度比例，仅用于避免重复打印
-private var lastDrawnProgress = Float.NaN
+private const val SEEK_STEP_MS = 10_000L
 
 private val PreviewPlayPauseBox = 40.dp
+
+private val SeekTrackHeight = 5.dp
+
+private val SeekThumbRadius = 6.dp
+
+private val SeekThumbRadiusActive = 9.dp
+
+// 诊断用：上一次实际绘制的进度比例，仅用于避免重复打印
+private var lastDrawnProgress = Float.NaN
 
 @Composable
 fun PlayerBottomBar(
     state: PlayerUiState,
     actions: PlayerActions,
-    iconBox: Dp,
     modifier: Modifier = Modifier,
 ) {
-    if (!state.controlsVisible) return
     val edge = playerEdgePadding()
     val bottomPad = if (state.previewMode) {
         (16.dp + playerDim(R.dimen.vs_30) / 2 - PreviewPlayPauseBox / 2).coerceAtLeast(0.dp)
@@ -74,19 +85,30 @@ fun PlayerBottomBar(
             .background(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = 0.5f),
+                    0.5f to Color.Black.copy(alpha = 0.35f),
+                    1f to Color.Black.copy(alpha = 0.7f),
                 )
             )
             .padding(start = edge, end = edge, top = 10.dp, bottom = bottomPad)
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp)
-        ) {
-            if (!state.previewMode) {
+        if (!state.previewMode) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+            ) {
                 PlayerTimePill(state = state, modifier = Modifier.align(Alignment.CenterStart))
-                VideoSizePill(state = state, modifier = Modifier.align(Alignment.CenterEnd))
+                if (state.netSpeedTopRightVisible && state.netSpeedTopRight.isNotBlank()) {
+                    PlayerInfoPill(modifier = Modifier.align(Alignment.CenterEnd)) {
+                        Text(
+                            text = state.netSpeedTopRight,
+                            color = Color.White,
+                            fontSize = playerTextSize(R.dimen.ts_20),
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
 
@@ -121,9 +143,9 @@ fun PlayerBottomBar(
         }
 
         if (!state.previewMode) {
-            PlayerActionPill(
+            PlayerActionRow(
+                state = state,
                 actions = actions,
-                iconBox = iconBox,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
@@ -159,92 +181,126 @@ fun PlayerBottomBar(
 
 internal const val OVERLAY_PILL_ALPHA = 0.2f
 
-private const val PILL_DIVIDER_ALPHA = 0.3f
-
 @Composable
-private fun PlayerActionPill(
+private fun PlayerActionRow(
+    state: PlayerUiState,
     actions: PlayerActions,
-    iconBox: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val gap = playerDim(R.dimen.vs_8)
+    val actionBox = playerDim(R.dimen.vs_70)
+    val actionIcon = playerDim(R.dimen.vs_50)
     Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = gap),
+        modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_menu_refresh,
-            label = stringResource(R.string.common_refresh),
-            box = iconBox,
-            onClick = actions::onRefreshClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillIconButton(
-            iconRes = R.drawable.ic_detail_cast,
-            label = stringResource(R.string.common_cast),
-            box = iconBox,
-            onClick = actions::onCastClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_menu_subtitle,
-            label = stringResource(R.string.player_menu_subtitle),
-            box = iconBox,
-            onClick = actions::onSubtitleClicked,
-            onLongClick = actions::onSubtitleLongClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_menu_danmu,
-            label = stringResource(R.string.player_menu_danmu),
-            box = iconBox,
-            onClick = actions::onDanmuSettingClicked,
-            onLongClick = actions::onDanmuSettingLongClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_menu_audio,
-            label = stringResource(R.string.player_menu_audio_track),
-            box = iconBox,
-            onClick = actions::onAudioTrackClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_menu_video,
-            label = stringResource(R.string.player_menu_video_track),
-            box = iconBox,
-            onClick = actions::onVideoTrackClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillDivider(iconBox)
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_menu_episodes,
-            label = stringResource(R.string.detail_episodes),
-            box = iconBox,
-            onClick = actions::onEpisodeClicked,
-            modifier = Modifier.weight(1f),
-        )
-        PlayerPillIconButton(
-            iconRes = R.drawable.player_ic_params,
-            label = stringResource(R.string.player_menu_more),
-            box = iconBox,
-            onClick = actions::onParamsClicked,
-            modifier = Modifier.weight(1f),
-        )
+        PlayerTransportRow(state = state, actions = actions, modifier = Modifier.weight(1f))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(playerDim(R.dimen.vs_12)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TransportButton(
+                iconRes = R.drawable.player_ic_menu_episodes,
+                contentDescription = stringResource(R.string.detail_episodes),
+                box = actionBox,
+                iconSize = actionIcon,
+                onClick = actions::onEpisodeClicked,
+            )
+            TransportButton(
+                iconRes = R.drawable.player_ic_params,
+                contentDescription = stringResource(R.string.player_menu_more),
+                box = actionBox,
+                iconSize = actionIcon,
+                onClick = actions::onParamsClicked,
+            )
+        }
+    }
+}
+
+private const val TRANSPORT_COUNT = 5
+
+internal const val TRANSPORT_PLAY_PAUSE_TAG = "playerTransportPlayPause"
+
+private const val TRANSPORT_SIDE_RATIO = 5f / 7f
+
+@Composable
+private fun PlayerTransportRow(
+    state: PlayerUiState,
+    actions: PlayerActions,
+    modifier: Modifier = Modifier,
+) {
+    val gap = playerDim(R.dimen.vs_12)
+    val preferred = playerDim(R.dimen.vs_70)
+    BoxWithConstraints(modifier) {
+        val box = minOf(preferred, (maxWidth - gap * (TRANSPORT_COUNT - 1)) / TRANSPORT_COUNT)
+            .coerceAtLeast(1.dp)
+        val sideIcon = box * TRANSPORT_SIDE_RATIO
+        val playing = state.playbackActive
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(gap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TransportButton(
+                iconRes = R.drawable.player_ic_replay_10,
+                contentDescription = stringResource(R.string.player_seek_back),
+                box = box,
+                iconSize = sideIcon,
+                onClick = { actions.onSeekRelative(-SEEK_STEP_MS) },
+            )
+            TransportButton(
+                iconRes = if (playing) R.drawable.player_ic_pause else R.drawable.player_ic_play,
+                contentDescription = stringResource(if (playing) R.string.common_pause else R.string.common_play),
+                box = box,
+                iconSize = box,
+                testTag = TRANSPORT_PLAY_PAUSE_TAG,
+                onClick = actions::onPlayPauseClicked,
+            )
+            TransportButton(
+                iconRes = R.drawable.player_ic_forward_10,
+                contentDescription = stringResource(R.string.player_seek_forward),
+                box = box,
+                iconSize = sideIcon,
+                onClick = { actions.onSeekRelative(SEEK_STEP_MS) },
+            )
+            TransportButton(
+                iconRes = R.drawable.player_ic_prev,
+                contentDescription = stringResource(R.string.player_prev_episode),
+                box = box,
+                iconSize = sideIcon,
+                onClick = actions::onPreClicked,
+            )
+            TransportButton(
+                iconRes = R.drawable.player_ic_next,
+                contentDescription = stringResource(R.string.player_next_episode),
+                box = box,
+                iconSize = sideIcon,
+                onClick = actions::onNextClicked,
+            )
+        }
     }
 }
 
 @Composable
-private fun PlayerPillDivider(iconBox: Dp) {
+private fun TransportButton(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    box: Dp,
+    iconSize: Dp,
+    onClick: () -> Unit,
+    testTag: String? = null,
+) {
     Box(
-        Modifier
-            .padding(horizontal = playerDim(R.dimen.vs_8))
-            .width(1.dp)
-            .height(iconBox * ICON_TO_BOX_RATIO)
-            .background(Color.White.copy(alpha = PILL_DIVIDER_ALPHA), RoundedCornerShape(50)),
-    )
+        Modifier.size(box),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .size(iconSize)
+                .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
+                .playerPressEffect(onTap = onClick),
+        )
+    }
 }
 
 @Composable
@@ -264,20 +320,6 @@ private fun PlayerInfoPill(modifier: Modifier = Modifier, content: @Composable R
 @Composable
 private fun PlayerTimePill(state: PlayerUiState, modifier: Modifier = Modifier) {
     PlayerInfoPill(modifier) { TimeRangeText(state) }
-}
-
-@Composable
-private fun VideoSizePill(state: PlayerUiState, modifier: Modifier = Modifier) {
-    if (state.videoSize.isBlank()) return
-    PlayerInfoPill(modifier) {
-        Text(
-            text = state.videoSize,
-            color = Color.White,
-            fontSize = playerTextSize(R.dimen.ts_20),
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-        )
-    }
 }
 
 @Composable
@@ -308,11 +350,7 @@ private fun CurrentTimeText(state: PlayerUiState, modifier: Modifier = Modifier)
 private fun PreviewPlayPauseButton(state: PlayerUiState, actions: PlayerActions) {
     val playing = state.playbackActive
     Box(
-        modifier = Modifier
-            .size(PreviewPlayPauseBox)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = { actions.onPlayPauseClicked() })
-            },
+        modifier = Modifier.size(PreviewPlayPauseBox),
         contentAlignment = Alignment.Center,
     ) {
         Image(
@@ -321,7 +359,9 @@ private fun PreviewPlayPauseButton(state: PlayerUiState, actions: PlayerActions)
             ),
             contentDescription = stringResource(if (playing) R.string.common_pause else R.string.common_play),
             colorFilter = ColorFilter.tint(Color.White.copy(alpha = 0.9f)),
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier
+                .size(22.dp)
+                .playerPressEffect(onTap = actions::onPlayPauseClicked),
         )
     }
 }
@@ -336,6 +376,16 @@ private fun PlayerSeekRow(
     var dragProgress by remember { mutableStateOf(0f) }
 
     val thumbActive = draggingLocal || state.dragging
+    val density = LocalDensity.current
+    val thumbRadiusDp = animateFloatAsState(
+        targetValue = if (thumbActive) SeekThumbRadiusActive.value else SeekThumbRadius.value,
+        animationSpec = tween(
+            durationMillis = if (thumbActive) PLAYER_IN_MS else PLAYER_OUT_MS,
+            easing = if (thumbActive) PLAYER_ENTER_EASING else PLAYER_EXIT_EASING,
+        ),
+        label = "seekThumbRadius",
+    ).value
+    val thumbRadiusPx = with(density) { thumbRadiusDp.dp.toPx() }
 
     var seekModifier = modifier
         .height(playerDim(R.dimen.vs_30))
@@ -404,7 +454,6 @@ private fun PlayerSeekRow(
             state.duration > 0 -> state.position.toFloat() / state.duration * SEEK_MAX
             else -> 0f
         }
-        // 诊断：记录进度条实际绘制的比例。拖动时 seekPreview 每帧变化，跳过以免刷屏。
         if (!state.dragging && lastDrawnProgress != progress) {
             lastDrawnProgress = progress
             LOG.i(
@@ -414,9 +463,9 @@ private fun PlayerSeekRow(
         }
         val buffered: Float =
             if (state.duration > 0) state.bufferedPercent / 100f * SEEK_MAX else 0f
-        val trackHeight = 3.dp.toPx()
+        val trackHeight = SeekTrackHeight.toPx()
         val centerY = size.height / 2
-        val corner = CornerRadius(2.dp.toPx())
+        val corner = CornerRadius(trackHeight / 2)
         drawRoundRect(
             color = Color(0x4DFFFFFF),
             topLeft = Offset(0f, centerY - trackHeight / 2),
@@ -439,7 +488,7 @@ private fun PlayerSeekRow(
                 cornerRadius = corner,
             )
         }
-        val thumbRadius = (if (thumbActive) 8.dp else 6.dp).toPx()
+        val thumbRadius = thumbRadiusPx
         val thumbCenter = Offset(size.width * (progress / SEEK_MAX), centerY)
         drawCircle(Color.White, radius = thumbRadius, center = thumbCenter)
         drawCircle(

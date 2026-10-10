@@ -530,6 +530,8 @@
     <string name="player_rotate_portrait">旋轉到直向</string>
     <string name="player_prev_episode">上一集</string>
     <string name="player_next_episode">下一集</string>
+    <string name="player_seek_back">後退10秒</string>
+    <string name="player_seek_forward">往前10秒</string>
     <string name="home_hot_recommend">熱門推薦</string>
     <string name="home_load_failed">首頁載入失敗，請檢查網路後重試</string>
     <string name="home_load_partial_timeout">部分內容載入逾時，可下拉重新整理重試</string>

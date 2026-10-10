@@ -75,6 +75,27 @@ object PlayerHelper {
     fun isLocalProxyUrl(url: String?): Boolean = SourcePolicy.isLocalProxyUrl(url)
 
     @JvmStatic
+    fun decodeKindOf(
+        codecName: String?,
+        hardwareAccelerated: Boolean,
+        softwareOnly: Boolean,
+    ): PlayerDecodeKind {
+        val name = codecName.orEmpty()
+        if (name.isEmpty()) return PlayerDecodeKind.UNKNOWN
+        if (softwareOnly) return PlayerDecodeKind.SOFTWARE
+        if (isSoftwareCodecName(name)) return PlayerDecodeKind.SOFTWARE
+        if (hardwareAccelerated) return PlayerDecodeKind.HARDWARE
+        return PlayerDecodeKind.UNKNOWN
+    }
+
+    private fun isSoftwareCodecName(name: String): Boolean =
+        name.startsWith("c2.android.") ||
+            name.startsWith("OMX.google.") ||
+            name.startsWith("OMX.ffmpeg.") ||
+            name.contains(".sw.") ||
+            name.endsWith(".sw")
+
+    @JvmStatic
     fun getPlayerName(playType: Int): String {
         return when (playType) {
             13 -> str(R.string.player_nearby_tvbox)

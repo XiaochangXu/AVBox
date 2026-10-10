@@ -99,7 +99,7 @@ abstract class BaseActivity : AppCompatActivity(), CustomAdapt {
 
     internal fun applyHideStatusBarPref() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        if (KV.get(HawkConfig.HIDE_STATUS_BAR, false)) {
+        if (KV.get(HawkConfig.HIDE_STATUS_BAR, false) || keepStatusBarHidden()) {
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.statusBars())
@@ -107,6 +107,8 @@ abstract class BaseActivity : AppCompatActivity(), CustomAdapt {
             controller.show(WindowInsetsCompat.Type.statusBars())
         }
     }
+
+    protected open fun keepStatusBarHidden(): Boolean = false
 
     open fun hideSysBar() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {

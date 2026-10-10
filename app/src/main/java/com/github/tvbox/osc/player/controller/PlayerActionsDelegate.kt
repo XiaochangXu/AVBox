@@ -17,28 +17,17 @@ import com.github.tvbox.osc.util.PlayerUtils
 import org.json.JSONException
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.HashMap
 import java.util.Locale
 
 private const val SEEK_MAX = 1000
 
-internal class PlayerActionsDelegate(private val host: ComposeVideoController) : PlayerActions {
+internal class PlayerActionsDelegate(private val host: VideoPlayerController) : PlayerActions {
 
     private val idleHideMillis = 10000L
-
-    private val fastClickMap = HashMap<String, Long>()
 
     private var keySeekProgress = 0
 
     private val keySeekCommitRunnable by lazy { Runnable { commitKeySeek() } }
-
-    private fun fastClickAllowed(key: String): Boolean {
-        val now = System.currentTimeMillis()
-        val last = fastClickMap[key] ?: 0L
-        if (now - last < 500) return false
-        fastClickMap[key] = now
-        return true
-    }
 
     fun cancelKeySeekCommit() {
         host.uiHandler.removeCallbacks(keySeekCommitRunnable)
@@ -69,6 +58,7 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
         if (host.state.dragging) onSeekCancelled()
         host.state.controlsVisible = false
         host.state.topLeftVisible = false
+        host.state.topRightVisible = false
         host.state.netSpeedTopRightVisible = false
         host.state.sysTimeVisible = false
         host.state.backVisible = false
@@ -96,15 +86,9 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
     }
 
     override fun onPlayPauseClicked() {
-        if (!fastClickAllowed("play_pause")) return
         if (host.state.tipVisible && !host.isInPlaybackState()) return
         host.videoView?.togglePlay()
         keepControlsAlive()
-    }
-
-    override fun onRefreshClicked() {
-        host.listener?.replay(false)
-        hideBottom()
     }
 
     override fun onScaleClicked() {
@@ -114,7 +98,6 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
 
     override fun onScaleLongClicked() {
         keepControlsAlive()
-        if (!fastClickAllowed("scale_long")) return
         host.config.applyScale(0)
     }
 
@@ -125,7 +108,6 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
 
     override fun onSpeedLongClicked() {
         keepControlsAlive()
-        if (!fastClickAllowed("speed_long")) return
         host.config.applySpeed(1.0f)
     }
 
@@ -147,7 +129,6 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
 
     override fun onPlayerLongClicked() {
         keepControlsAlive()
-        if (!fastClickAllowed("player_long")) return
         try {
             val cfg = host.playerConfig ?: return
             val playerType = cfg.getInt("pl")
@@ -172,7 +153,7 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
                 },
             )
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -203,12 +184,11 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
             host.config.updatePlayerCfgState()
             host.listener?.updatePlayerCfg()
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
     override fun onEpisodeClicked() {
-        if (!fastClickAllowed("episode")) return
         host.listener?.showEpisodes()
         keepControlsAlive()
     }
@@ -218,37 +198,31 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
     }
 
     override fun onSubtitleClicked() {
-        if (!fastClickAllowed("zimu")) return
         host.listener?.selectSubtitle()
         keepControlsAlive()
     }
 
     override fun onSubtitleLongClicked() {
-        if (!fastClickAllowed("zimu_long")) return
         host.listener?.closeSubtitles()
         hideBottom()
         Toast.makeText(host.context, host.context.getString(R.string.player_subtitle_closed), Toast.LENGTH_SHORT).show()
     }
 
     override fun onAudioTrackClicked() {
-        if (!fastClickAllowed("audio")) return
         host.listener?.selectAudioTrack()
         keepControlsAlive()
     }
 
     override fun onVideoTrackClicked() {
-        if (!fastClickAllowed("video")) return
         host.listener?.selectVideoTrack()
         keepControlsAlive()
     }
 
     override fun onDanmuSettingClicked() {
-        if (!fastClickAllowed("danmu")) return
         host.listener?.showDanmuSetting()
     }
 
     override fun onDanmuSettingLongClicked() {
-        if (!fastClickAllowed("danmu_long")) return
         val opened = host.listener?.toggleDanmu() ?: false
         hideBottom()
         Toast.makeText(host.context, host.context.getString(if (opened) R.string.player_danmu_opened else R.string.player_danmu_temp_closed), Toast.LENGTH_SHORT).show()
@@ -266,7 +240,6 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
 
     override fun onRotateClicked() {
         if (host.state.locked) return
-        if (!fastClickAllowed("rotate")) return
         val toPortrait =
             host.resources.configuration.orientation != Configuration.ORIENTATION_PORTRAIT
         host.playerActivity()?.requestedOrientation =
@@ -341,6 +314,7 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
             seekTarget = seekBarToPosition(progress, duration).toInt()
             view.seekTo(seekTarget.toLong())
         }
+        if (seekTarget >= 0) host.state.position = seekTarget
         host.state.dragging = false
         keySeekProgress = 0
         host.startProgress()
@@ -375,6 +349,23 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
         host.uiHandler.postDelayed(keySeekCommitRunnable, 400)
     }
 
+    override fun onSeekRelative(deltaMs: Long) {
+        val view = host.videoView ?: return
+        val duration = PlayerUtils.safeTimeMs(view.duration)
+        if (duration <= 0) return
+        if (!host.state.controlsVisible) applyShowBottom()
+        val current = PlayerUtils.safeTimeMs(view.currentPosition)
+        val target = (current + deltaMs).coerceIn(0L, duration.toLong())
+        host.state.dragging = false
+        keySeekProgress = 0
+        view.seekTo(target)
+        host.state.position = target.toInt()
+        host.state.seekPreviewPositionMs = target
+        host.updateSeekUiHint(current, target.toInt())
+        host.savePlaybackProgress(notifyHistory = true, seekTargetMs = target.toInt())
+        keepControlsAlive()
+    }
+
     private fun commitKeySeek() {
         if (!host.state.dragging) return
         onSeekFinished(keySeekProgress)
@@ -405,6 +396,7 @@ internal class PlayerActionsDelegate(private val host: ComposeVideoController) :
         host.state.netSpeedCenter = PlayerHelper.getDisplaySpeed(speed, false)
         val size = runCatching { view.videoSize }.getOrDefault(intArrayOf(0, 0))
         host.state.videoSize = host.videoSizeGate.textFor(size[0], size[1])
+        host.state.videoQuality = host.videoSizeGate.qualityFor(size[0], size[1])
         if (host.state.infoOsdVisible) InfoOsdText.refreshInfoOsd(host.context, host.state, host.videoView, host.playerActivity(), speed)
     }
 

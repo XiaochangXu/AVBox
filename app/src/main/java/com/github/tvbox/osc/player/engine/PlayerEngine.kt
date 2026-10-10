@@ -71,8 +71,9 @@ class PlayerEngine(
     val mediaSources = MediaSources(appContext, config.okHttpClient)
 
     private val videoRenderers = ArrayList<Renderer>()
-
     private val videoRendererIndices = ArrayList<Int>()
+
+    private var audioRenderersFactory: EngineRenderersFactory? = null
 
     private val trackSelector = DefaultTrackSelector(appContext)
 
@@ -229,15 +230,17 @@ class PlayerEngine(
     }
 
     private fun createPlayer(): ExoPlayer {
-        val renderersFactory = EngineRenderersFactory(
+        val factory = EngineRenderersFactory(
             appContext,
             { trackSelection.subtitleDelayUs },
             videoRenderers,
             videoRendererIndices,
             config.dynamicScheduling,
         )
-            .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+        factory.setEnableDecoderFallback(true)
+        factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+        val renderersFactory = factory
+        audioRenderersFactory = renderersFactory
         renderersFactory.forceDisableMediaCodecAsynchronousQueueing()
         LOG.i("echo-exo-disable-async-codec-queue")
         LOG.i("echo-exo-video-dynamic-scheduling: ${config.dynamicScheduling}")
@@ -579,6 +582,12 @@ class PlayerEngine(
 
     val videoDecoderName: String
         get() = PlayerCodecStats.videoDecoderName
+
+    val audioCodecChoice: AudioCodecChoice?
+        get() = AudioCodecProbe.liveInfo(audioRenderersFactory?.audioRenderer)
+
+    val audioRendererName: String?
+        get() = AudioCodecProbe.rendererClassName(audioRenderersFactory?.audioRenderer)
 
     val lastErrorKind: Int
         get() = lastErrorKindValue

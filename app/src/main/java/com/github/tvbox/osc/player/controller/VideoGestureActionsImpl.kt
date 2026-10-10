@@ -14,7 +14,7 @@ import com.github.tvbox.osc.player.ui.VERBOSE_GESTURE_LOG
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
 
-internal class VideoGestureActionsImpl(private val host: ComposeVideoController) : VideoGestureActions {
+internal class VideoGestureActionsImpl(private val host: VideoPlayerController) : VideoGestureActions {
 
     private enum class HintKind { NONE, SEEK, SLIDE }
 

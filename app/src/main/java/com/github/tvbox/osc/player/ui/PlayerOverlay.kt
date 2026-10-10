@@ -4,23 +4,15 @@ import android.content.res.Configuration
 import android.content.res.Resources
 import android.util.TypedValue
 import androidx.annotation.DimenRes
-import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Image
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,8 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -43,12 +33,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
-import com.github.tvbox.osc.ui.components.ScallopShape
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
@@ -79,17 +66,41 @@ fun PlayerOverlay(
             ),
     ) {
         val iconBox = playerIconBox(maxWidth - playerEdgePadding() * 2)
+        val slidePx = playerSlidePx()
         PlayerTipLayer(state)
-        PlayerTopBar(state, actions)
-        PlayerBottomBar(state, actions, iconBox, Modifier.align(Alignment.BottomCenter))
-        PlayerCenterControls(state, actions, Modifier.align(Alignment.Center))
-        PlayerPauseLayer(state, actions)
+        AnimatedVisibility(
+            visible = state.topLeftVisible || state.topRightVisible,
+            enter = playerEnterFromTop(slidePx),
+            exit = playerExitToTop(slidePx),
+        ) {
+            PlayerTopBar(state, actions)
+        }
+        AnimatedVisibility(
+            visible = state.controlsVisible,
+            enter = playerEnterFromBottom(slidePx),
+            exit = playerExitToBottom(slidePx),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            PlayerBottomBar(state, actions)
+        }
         PlayerSlideHint(state)
         PlayerSeekHint(state)
-        if (!state.tipVisible) PlayerLoadingLayer(state)
+        PlayerFadeVisibility(
+            visible = state.loadingVisible && !state.tipVisible,
+            enterMs = PLAYER_OSD_IN_MS,
+            exitMs = PLAYER_OSD_OUT_MS,
+        ) {
+            PlayerLoadingLayer(state)
+        }
         PlayerNetSpeedCenter(state)
         PlayerSideButtons(state, actions, iconBox)
-        PlayerInfoOsd(state, actions, maxWidth)
+        PlayerFadeVisibility(
+            visible = state.infoOsdVisible,
+            enterMs = PLAYER_OSD_IN_MS,
+            exitMs = PLAYER_OSD_OUT_MS,
+        ) {
+            PlayerInfoOsd(state, actions, maxWidth)
+        }
         PlayerSpeedBoostHint(state)
 
         state.selectDialog?.let { dialogState ->
@@ -197,62 +208,6 @@ internal fun playerEdgePadding(): Dp =
     if (LocalConfiguration.current.screenWidthDp >= 600) 48.dp else 16.dp
 
 @Composable
-private fun PlayerCenterControls(state: PlayerUiState, actions: PlayerActions, modifier: Modifier = Modifier) {
-    if (!state.centerControlsVisible) return
-    val playing = state.playbackActive
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CenterControlIcon(
-            icon = painterResource(R.drawable.player_ic_prev),
-            label = stringResource(R.string.player_prev_episode),
-            onClick = actions::onPreClicked,
-            box = 44.dp,
-            shape = ScallopShape(),
-        )
-        CenterControlIcon(
-            icon = painterResource(if (playing) R.drawable.player_ic_pause else R.drawable.player_ic_play),
-            label = stringResource(if (playing) R.string.common_pause else R.string.common_play),
-            onClick = actions::onPlayPauseClicked,
-        )
-        CenterControlIcon(
-            icon = painterResource(R.drawable.player_ic_next),
-            label = stringResource(R.string.player_next_episode),
-            onClick = actions::onNextClicked,
-            box = 44.dp,
-            shape = ScallopShape(),
-        )
-    }
-}
-
-@Composable
-internal fun CenterControlIcon(
-    icon: Painter,
-    label: String,
-    onClick: () -> Unit,
-    box: Dp = 48.dp,
-    shape: Shape = CircleShape,
-) {
-    Box(
-        Modifier
-            .size(box)
-            .background(Color.Black.copy(alpha = 0.35f), shape)
-            .pointerInput(onClick) {
-                detectTapGestures(onTap = { onClick() })
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            painter = icon,
-            contentDescription = label,
-            modifier = Modifier.size(box * 0.55f),
-        )
-    }
-}
-
-@Composable
 internal fun PlayerMenuButton(
     text: String,
     onClick: () -> Unit,
@@ -288,58 +243,6 @@ internal fun PlayerMenuButton(
         fontWeight = if (pressed) FontWeight.Bold else FontWeight.Medium,
         modifier = buttonModifier,
     )
-}
-
-@Composable
-internal fun PlayerPillIconButton(
-    @DrawableRes iconRes: Int,
-    label: String,
-    box: Dp,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null,
-) {
-    var pressed by remember { mutableStateOf(false) }
-    Box(
-        modifier.pointerInput(onClick, onLongClick) {
-            detectTapGestures(
-                onPress = {
-                    pressed = true
-                    tryAwaitRelease()
-                    pressed = false
-                },
-                onTap = { onClick() },
-                onLongPress = onLongClick?.let { cb -> { cb() } },
-            )
-        },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .background(
-                    if (pressed) Color.White.copy(alpha = 0.22f) else Color.Transparent,
-                    RoundedCornerShape(50),
-                )
-                .padding(horizontal = playerDim(R.dimen.vs_10), vertical = playerDim(R.dimen.vs_2)),
-        ) {
-            Image(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(box * ICON_TO_BOX_RATIO),
-            )
-            Text(
-                text = label,
-                color = Color.White,
-                fontSize = playerTextSize(R.dimen.ts_18),
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-    }
 }
 
 internal const val ICON_TO_BOX_RATIO = 0.55f

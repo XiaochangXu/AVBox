@@ -13,11 +13,14 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.AppPlayerView
 import com.github.tvbox.osc.player.ExoPlayer
+import com.github.tvbox.osc.player.PlayerDecodeKind
 import com.github.tvbox.osc.player.PlayerHelper
+import com.github.tvbox.osc.player.engine.AudioDecoderLookup
 import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.LOG
 import java.util.Locale
 
 internal object InfoOsdText {
@@ -37,7 +40,7 @@ internal object InfoOsdText {
 
         left.add(context.getString(R.string.osd_video) + " " + videoText(video, exo))
         left.add(context.getString(R.string.osd_decoder) + " " + (exo?.videoDecoderName()?.takeIf { it.isNotEmpty() } ?: "-"))
-        left.add(context.getString(R.string.osd_audio) + " " + audioText(exo?.selectedAudioFormat))
+        left.add(context.getString(R.string.osd_audio) + " " + audioText(context, exo))
 
         exo?.sampleFrameRate()
         val throughput = runCatching {
@@ -99,17 +102,54 @@ internal object InfoOsdText {
         else -> format.sampleMimeType?.substringAfter('/')?.uppercase(Locale.US) ?: "-"
     }
 
-    private fun audioText(format: Format?): String {
+    private fun audioText(context: Context, exo: ExoPlayer?): String {
+        val format = exo?.selectedAudioFormat
         if (format == null) return "-"
         val parts = ArrayList<String>()
         val codecs = format.codecs
         parts.add(if (!codecs.isNullOrEmpty()) codecs else format.sampleMimeType?.substringAfter('/')?.uppercase(Locale.US) ?: "-")
+        val live = exo.audioCodecChoice()
+        if (live != null) {
+            parts.add(decodeKindText(context, PlayerHelper.decodeKindOf(live.name, live.hardwareAccelerated, live.softwareOnly)))
+            parts.add(live.name)
+        } else {
+            val predicted = AudioDecoderLookup.choiceFor(format)
+            if (predicted != null) {
+                parts.add(decodeKindText(context, PlayerHelper.decodeKindOf(predicted.name, predicted.hardwareAccelerated, predicted.softwareOnly)))
+                parts.add(predicted.name)
+            }
+        }
         if (format.channelCount > 0) parts.add(format.channelCount.toString() + ".0")
         if (format.sampleRate > 0) {
             val khz = format.sampleRate / 1000f
             parts.add((if (khz % 1f == 0f) khz.toInt().toString() else String.format(Locale.US, "%.1f", khz)) + "kHz")
         }
+        logAudioCodec(format, exo)
         return parts.joinToString(" · ")
+    }
+
+    private fun decodeKindText(context: Context, kind: PlayerDecodeKind): String = when (kind) {
+        PlayerDecodeKind.HARDWARE -> context.getString(R.string.player_decode_hard)
+        PlayerDecodeKind.SOFTWARE -> context.getString(R.string.player_decode_soft)
+        PlayerDecodeKind.UNKNOWN -> "-"
+    }
+
+    private var lastLoggedAudioKey: String? = null
+
+    private fun logAudioCodec(format: Format, exo: ExoPlayer?) {
+        val live = exo?.audioCodecChoice()
+        val predicted = if (live == null) AudioDecoderLookup.choiceFor(format) else null
+        val choice = live ?: predicted ?: return
+        val source = if (live != null) "live" else "predicted"
+        val key = source + "|" + choice.name + "|" + choice.hardwareAccelerated + "|" + choice.softwareOnly
+        if (key == lastLoggedAudioKey) return
+        lastLoggedAudioKey = key
+        LOG.i(
+            "echo-player-audio-codec: source=$source mime=${format.sampleMimeType} name=${choice.name}" +
+                " hw=${choice.hardwareAccelerated} swOnly=${choice.softwareOnly}" +
+                " kind=${PlayerHelper.decodeKindOf(choice.name, choice.hardwareAccelerated, choice.softwareOnly)}" +
+                " renderer=${exo?.audioRendererName() ?: "-"}",
+        )
     }
 
     private fun bitrateText(bps: Long): String {

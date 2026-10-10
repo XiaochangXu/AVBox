@@ -526,6 +526,14 @@ open class AppPlayerView @JvmOverloads constructor(
         fun onVideoSizeCleared()
 
         fun startProgress()
+
+        /**
+         * 控制器挂载到播放器容器上的 View。
+         *
+         * 默认返回控制器自身（直播等仍以 View 实现的控制器无需覆写）；
+         * 纯 Compose 控制器本身不是 View，应覆写此方法返回其 ComposeView 宿主。
+         */
+        fun controllerView(): View? = this as? View
     }
 
     protected var mVideoController: VideoControllerHost? = null
@@ -535,14 +543,12 @@ open class AppPlayerView @JvmOverloads constructor(
 
     open fun setVideoController(controller: VideoControllerHost?) {
         val old = mVideoController
-        if (old is View) {
-            mPlayerContainer.removeView(old)
-        }
+        old?.controllerView()?.let { mPlayerContainer.removeView(it) }
         mVideoController = controller
         if (controller != null) {
-            if (controller is View) {
+            controller.controllerView()?.let { attach ->
                 mPlayerContainer.addView(
-                    controller,
+                    attach,
                     LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
                 )
             }
@@ -601,7 +607,7 @@ open class AppPlayerView @JvmOverloads constructor(
     open fun playerContainer(): FrameLayout = mPlayerContainer
 
     open fun bringControllerToFront() {
-        (mVideoController as? View)?.bringToFront()
+        mVideoController?.controllerView()?.bringToFront()
     }
 
     fun hostActivity(): Activity? = PlayerUtils.scanForActivity(context)

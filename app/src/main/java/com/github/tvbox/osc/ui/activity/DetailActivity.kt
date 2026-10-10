@@ -96,6 +96,8 @@ class DetailActivity : BaseActivity(), PageHost {
         if (fullScreen) super.hideSysBar()
     }
 
+    override fun keepStatusBarHidden(): Boolean = fullScreen
+
     private fun applyStatusBarAppearance() {
         val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES

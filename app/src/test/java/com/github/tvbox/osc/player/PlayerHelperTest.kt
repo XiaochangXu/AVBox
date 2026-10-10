@@ -30,4 +30,34 @@ class PlayerHelperTest {
         assertFalse(PlayerHelper.isExoDecodeApplied("硬解码", true))
         assertFalse(PlayerHelper.isExoDecodeApplied(null, true))
     }
+
+    @Test
+    fun decodeKindOf_missingNameIsUnknown() {
+        assertEquals(PlayerDecodeKind.UNKNOWN, PlayerHelper.decodeKindOf(null, true, false))
+        assertEquals(PlayerDecodeKind.UNKNOWN, PlayerHelper.decodeKindOf("", true, false))
+    }
+
+    @Test
+    fun decodeKindOf_softwareNameWinsOverHardwareFlag() {
+        assertEquals(PlayerDecodeKind.SOFTWARE, PlayerHelper.decodeKindOf("c2.android.aac.decoder", true, false))
+        assertEquals(PlayerDecodeKind.SOFTWARE, PlayerHelper.decodeKindOf("OMX.google.aac.decoder", false, false))
+        assertEquals(PlayerDecodeKind.SOFTWARE, PlayerHelper.decodeKindOf("OMX.ffmpeg.aac.decoder", false, false))
+        assertEquals(PlayerDecodeKind.SOFTWARE, PlayerHelper.decodeKindOf("c2.qti.aac.decoder.sw", true, false))
+    }
+
+    @Test
+    fun decodeKindOf_softwareOnlyFlagWinsOverHardwareFlag() {
+        assertEquals(PlayerDecodeKind.SOFTWARE, PlayerHelper.decodeKindOf("c2.qti.aac.decoder", true, true))
+    }
+
+    @Test
+    fun decodeKindOf_vendorHardwareDecoderIsHardware() {
+        assertEquals(PlayerDecodeKind.HARDWARE, PlayerHelper.decodeKindOf("c2.qti.aac.decoder", true, false))
+        assertEquals(PlayerDecodeKind.HARDWARE, PlayerHelper.decodeKindOf("OMX.qcom.audio.decoder.aac", true, false))
+    }
+
+    @Test
+    fun decodeKindOf_vendorNameWithoutHardwareFlagIsUnknown() {
+        assertEquals(PlayerDecodeKind.UNKNOWN, PlayerHelper.decodeKindOf("OMX.qcom.audio.decoder.aac", false, false))
+    }
 }

@@ -9,6 +9,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.Format
 import androidx.media3.common.Player
 import androidx.media3.common.text.Cue
+import com.github.tvbox.osc.player.engine.AudioCodecChoice
 import com.github.tvbox.osc.player.engine.CodecPreferences
 import com.github.tvbox.osc.player.engine.PlayerEngine
 import com.github.tvbox.osc.player.engine.PlayerEngineConfig
@@ -330,6 +331,10 @@ class ExoPlayer(context: Context) : KernelPlayer() {
     fun rebufferCount(): Int = engine?.rebufferCount ?: 0
 
     fun videoDecoderName(): String = engine?.videoDecoderName ?: ""
+
+    fun audioCodecChoice(): AudioCodecChoice? = engine?.audioCodecChoice
+
+    fun audioRendererName(): String? = engine?.audioRendererName
 
     fun measuredFrameRate(): Float = engine?.measuredFrameRate ?: 0f
 

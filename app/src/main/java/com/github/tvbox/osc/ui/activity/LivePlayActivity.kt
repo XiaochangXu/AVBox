@@ -321,6 +321,8 @@ class LivePlayActivity : BaseActivity() {
         if (fullScreen) super.hideSysBar()
     }
 
+    override fun keepStatusBarHidden(): Boolean = fullScreen
+
     override fun init() {
         enableTransparentEdgeToEdge()
         applyStatusBarAppearance()

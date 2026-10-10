@@ -217,7 +217,7 @@ internal fun CollectTab(
                         contentPadding = PaddingValues(
                             start = 16.dp + navStart,
                             end = 16.dp,
-                            top = 24.dp,
+                            top = 12.dp,
                             bottom = 8.dp + navBottom,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),

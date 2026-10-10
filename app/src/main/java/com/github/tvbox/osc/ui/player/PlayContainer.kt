@@ -29,7 +29,7 @@ import com.github.tvbox.osc.player.PlaybackViewBridge
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.PreloadCoordinator
 import com.github.tvbox.osc.player.VideoOrientation
-import com.github.tvbox.osc.player.controller.ComposeVideoController
+import com.github.tvbox.osc.player.controller.VideoPlayerController
 import com.github.tvbox.osc.player.controller.PlayerControlApi
 import com.github.tvbox.osc.player.danmu.DanmuLoadController
 import com.github.tvbox.osc.player.state.CastSheetState
@@ -321,8 +321,8 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
             false
         }
         surfaceSlot = findViewById(R.id.surfaceSlot)
-        mController = ComposeVideoController(mActivity!!)
-        (mController as? ComposeVideoController)?.onVideoSizeReady = { width, height ->
+        mController = VideoPlayerController(mActivity!!)
+        (mController as? VideoPlayerController)?.onVideoSizeReady = { width, height ->
             if (VideoOrientation.isUsableSize(width, height)) {
                 notifyVideoSizeReady(VideoOrientation.isPortrait(width, height))
             }

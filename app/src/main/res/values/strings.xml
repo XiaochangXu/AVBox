@@ -530,6 +530,8 @@
     <string name="player_rotate_portrait">旋转到竖屏</string>
     <string name="player_prev_episode">上一集</string>
     <string name="player_next_episode">下一集</string>
+    <string name="player_seek_back">后退10秒</string>
+    <string name="player_seek_forward">往前10秒</string>
     <string name="home_hot_recommend">热门推荐</string>
     <string name="home_load_failed">首页加载失败，请检查网络后重试</string>
     <string name="home_load_partial_timeout">部分内容加载超时，可下拉刷新重试</string>

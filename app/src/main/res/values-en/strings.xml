@@ -530,6 +530,8 @@
     <string name="player_rotate_portrait">Rotate to portrait</string>
     <string name="player_prev_episode">Previous episode</string>
     <string name="player_next_episode">Next episode</string>
+    <string name="player_seek_back">Back 10 seconds</string>
+    <string name="player_seek_forward">Forward 10 seconds</string>
     <string name="home_hot_recommend">Popular</string>
     <string name="home_load_failed">Home page failed to load. Check your network and try again</string>
     <string name="home_load_partial_timeout">Some content timed out. Pull down to refresh</string>

@@ -5,7 +5,6 @@ package com.github.tvbox.osc.player.ui
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -30,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -106,58 +104,48 @@ fun PlayerTipLayer(state: PlayerUiState) {
 }
 
 @Composable
-fun PlayerPauseLayer(state: PlayerUiState, actions: PlayerActions) {
-    if (!state.pauseOverlayVisible || state.tipVisible) return
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CenterControlIcon(
-            icon = painterResource(R.drawable.player_ic_play),
-            label = stringResource(R.string.common_play),
-            onClick = actions::onPlayPauseClicked,
-        )
-    }
-}
-
-@Composable
 fun PlayerSlideHint(state: PlayerUiState) {
-    if (!state.slideHintVisible) return
-    HintPillLayer {
-        Image(
-            painter = painterResource(
-                if (state.slideHintBrightness) R.drawable.player_ic_brightness
-                else R.drawable.player_ic_volume
-            ),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(Color.White),
-            modifier = Modifier.size(playerDim(R.dimen.vs_50)),
-        )
-        Spacer(Modifier.width(playerDim(R.dimen.vs_20)))
-        Text(
-            text = state.slideHintText,
-            color = Color.White,
-            fontSize = playerTextSize(R.dimen.ts_30),
-        )
+    PlayerHintVisibility(visible = state.slideHintVisible) {
+        HintPillLayer {
+            Image(
+                painter = painterResource(
+                    if (state.slideHintBrightness) R.drawable.player_ic_brightness
+                    else R.drawable.player_ic_volume
+                ),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(Color.White),
+                modifier = Modifier.size(playerDim(R.dimen.vs_50)),
+            )
+            Spacer(Modifier.width(playerDim(R.dimen.vs_20)))
+            Text(
+                text = state.slideHintText,
+                color = Color.White,
+                fontSize = playerTextSize(R.dimen.ts_30),
+            )
+        }
     }
 }
 
 @Composable
 fun PlayerSeekHint(state: PlayerUiState) {
-    if (!state.seekHintVisible) return
-    HintPillLayer {
-        Image(
-            painter = painterResource(
-                if (state.seekHintForward) R.drawable.player_ic_params_time_end
-                else R.drawable.player_ic_params_time_start
-            ),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(Color.White),
-            modifier = Modifier.size(playerDim(R.dimen.vs_50)),
-        )
-        Spacer(Modifier.width(playerDim(R.dimen.vs_20)))
-        Text(
-            text = state.seekHintText,
-            color = Color.White,
-            fontSize = playerTextSize(R.dimen.ts_30),
-        )
+    PlayerHintVisibility(visible = state.seekHintVisible) {
+        HintPillLayer {
+            Image(
+                painter = painterResource(
+                    if (state.seekHintForward) R.drawable.player_ic_params_time_end
+                    else R.drawable.player_ic_params_time_start
+                ),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(Color.White),
+                modifier = Modifier.size(playerDim(R.dimen.vs_50)),
+            )
+            Spacer(Modifier.width(playerDim(R.dimen.vs_20)))
+            Text(
+                text = state.seekHintText,
+                color = Color.White,
+                fontSize = playerTextSize(R.dimen.ts_30),
+            )
+        }
     }
 }
 
@@ -237,35 +225,42 @@ private fun BoxScope.SideButton(
     visible: Boolean,
     onClick: () -> Unit,
 ) {
-    Image(
-        painter = painterResource(iconRes),
-        contentDescription = contentDescription,
-        alpha = if (visible) 1f else 0f,
+    val sideAlpha = playerSideAlpha(visible)
+    val sideScale = playerSideScale(visible)
+    Box(
         modifier = Modifier
             .align(if (startSide) Alignment.CenterStart else Alignment.CenterEnd)
             .padding(start = if (startSide) edge else 0.dp, end = if (startSide) 0.dp else edge)
             .size(iconSize)
-            .then(
-                if (visible) {
-                    Modifier.pointerInput(Unit) {
-                        detectTapGestures(onTap = { onClick() })
+            .playerSideEffect(alpha = sideAlpha, scale = sideScale),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (visible) {
+                        Modifier.playerPressEffect(onTap = onClick)
+                    } else {
+                        Modifier
                     }
-                } else {
-                    Modifier
-                }
-            ),
-    )
+                ),
+        )
+    }
 }
 
 @Composable
 fun PlayerSpeedBoostHint(state: PlayerUiState) {
-    if (!state.speedBoostVisible || state.tipVisible) return
-    HintPillLayer {
-        Text(
-            text = "%.1f X".format(state.speedBoostValue),
-            color = Color.White,
-            fontSize = playerTextSize(R.dimen.ts_26),
-            fontWeight = FontWeight.Bold,
-        )
+    PlayerHintVisibility(visible = state.speedBoostVisible && !state.tipVisible) {
+        HintPillLayer {
+            Text(
+                text = "%.1f X".format(state.speedBoostValue),
+                color = Color.White,
+                fontSize = playerTextSize(R.dimen.ts_26),
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }

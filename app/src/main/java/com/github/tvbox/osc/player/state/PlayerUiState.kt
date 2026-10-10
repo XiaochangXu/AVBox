@@ -38,6 +38,7 @@ class PlayerUiState {
 
     var title: String by mutableStateOf("")
     var videoSize: String by mutableStateOf(VideoSizeGate.UNKNOWN)
+    var videoQuality: String by mutableStateOf("")
     var sysTime: String by mutableStateOf("")
     var batteryPercent: Int by mutableStateOf(-1)
     var batteryCharging: Boolean by mutableStateOf(false)
@@ -221,7 +222,6 @@ interface PlayerActions {
     fun onNextClicked()
     fun onPreClicked()
     fun onPlayPauseClicked()
-    fun onRefreshClicked()
     fun onScaleClicked()
     fun onScaleLongClicked()
     fun onSpeedClicked()
@@ -256,6 +256,8 @@ interface PlayerActions {
     fun onSeekFinished(progress: Int)
     fun onSeekCancelled()
     fun onSeekStep(dir: Int)
+
+    fun onSeekRelative(deltaMs: Long)
 
     fun refreshSystemInfo()
 

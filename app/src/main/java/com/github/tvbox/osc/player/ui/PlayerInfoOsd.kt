@@ -27,9 +27,14 @@ private const val OSD_BG_ALPHA = 0.62f
 
 @Composable
 fun BoxScope.PlayerInfoOsd(state: PlayerUiState, actions: PlayerActions, maxWidth: Dp) {
-    if (!state.infoOsdVisible) return
+    val visible = state.infoOsdVisible
     val edge = playerEdgePadding()
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val tapModifier = if (visible) {
+        Modifier.pointerInput(Unit) { detectTapGestures(onTap = { actions.onInfoOsdClicked() }) }
+    } else {
+        Modifier
+    }
     Column(
         modifier = Modifier
             .align(Alignment.TopStart)
@@ -42,7 +47,7 @@ fun BoxScope.PlayerInfoOsd(state: PlayerUiState, actions: PlayerActions, maxWidt
                     bottomEnd = playerDim(R.dimen.vs_8),
                 ),
             )
-            .pointerInput(Unit) { detectTapGestures(onTap = { actions.onInfoOsdClicked() }) }
+            .then(tapModifier)
             .padding(
                 start = playerDim(R.dimen.vs_12),
                 end = playerDim(R.dimen.vs_12),

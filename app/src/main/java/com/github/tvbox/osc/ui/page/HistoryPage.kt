@@ -112,7 +112,7 @@ internal fun HistoryTab(
                     contentPadding = PaddingValues(
                         start = 16.dp + navStart,
                         end = 16.dp,
-                        top = 24.dp,
+                        top = 12.dp,
                         bottom = 8.dp + navBottom,
                     ),
                     verticalArrangement = Arrangement.spacedBy(12.dp),

@@ -6,6 +6,9 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioRendererEventListener
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.text.TextOutput
@@ -25,6 +28,9 @@ class EngineRenderersFactory(
     private val videoRendererIndices: MutableList<Int>,
     private val dynamicScheduling: Boolean,
 ) : DefaultRenderersFactory(context) {
+
+    var audioRenderer: Renderer? = null
+        private set
 
     companion object {
 
@@ -78,8 +84,45 @@ class EngineRenderersFactory(
         }
     }
 
-    override fun buildTextRenderers(
+    override fun buildAudioRenderers(
         context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        audioSink: AudioSink,
+        eventHandler: Handler,
+        eventListener: AudioRendererEventListener,
+        out: ArrayList<Renderer>,
+    ) {
+        val firstRendererIndex = out.size
+        super.buildAudioRenderers(
+            context,
+            extensionRendererMode,
+            mediaCodecSelector,
+            enableDecoderFallback,
+            audioSink,
+            eventHandler,
+            eventListener,
+            out,
+        )
+        for (i in firstRendererIndex until out.size) {
+            val renderer = out[i]
+            if (renderer is MediaCodecAudioRenderer) {
+                audioRenderer = renderer
+                LOG.i("echo-player-audio-renderer: bound ${renderer.javaClass.simpleName}")
+                return
+            }
+        }
+        if (firstRendererIndex < out.size) {
+            audioRenderer = out[firstRendererIndex]
+            LOG.i(
+                "echo-player-audio-renderer: not media codec, using" +
+                    " ${out[firstRendererIndex].javaClass.simpleName}",
+            )
+        }
+    }
+
+    override fun buildTextRenderers(        context: Context,
         output: TextOutput,
         outputLooper: Looper,
         extensionRendererMode: Int,

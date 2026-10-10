@@ -16,7 +16,7 @@ import org.json.JSONObject
 
 private const val SPEED_RETRY_MAX = 30
 
-internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
+internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
 
     private var speedRetryCount = 0
 
@@ -37,7 +37,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             host.state.timeEndText = if (end == 0) "" else PlayerUtils.stringForTime(end * 1000)
             refreshParamsSheet()
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -164,7 +164,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             host.speedOld = value
             host.videoView?.setSpeed(value)
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -177,7 +177,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             host.listener?.updatePlayerCfg()
             host.videoView?.setScreenScaleType(index)
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -192,7 +192,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             host.listener?.updatePlayerCfg()
             host.listener?.replay(false)
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -208,7 +208,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             host.listener?.updatePlayerCfg()
             if (!unchanged) host.listener?.replay(false)
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -218,7 +218,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             try {
                 host.playerConfig?.let { host.videoView?.setSpeed(it.getDouble("sp").toFloat()) }
             } catch (e: JSONException) {
-                LOG.e("ComposeVideoController", e)
+                LOG.e("VideoPlayerController", e)
             }
         } else if (speedRetryCount < SPEED_RETRY_MAX) {
             speedRetryCount++
@@ -250,7 +250,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
             updatePlayerCfgState()
             host.listener?.updatePlayerCfg()
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -269,7 +269,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
                 onSelected = { index -> applyScale(index) },
             )
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 
@@ -285,7 +285,7 @@ internal class PlayerConfigDelegate(private val host: ComposeVideoController) {
                 onSelected = { index -> applySpeed(speedOptions[index]) },
             )
         } catch (e: JSONException) {
-            LOG.e("ComposeVideoController", e)
+            LOG.e("VideoPlayerController", e)
         }
     }
 }

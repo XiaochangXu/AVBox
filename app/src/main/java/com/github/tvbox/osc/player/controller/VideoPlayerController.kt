@@ -3,14 +3,14 @@ package com.github.tvbox.osc.player.controller
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
+import android.content.res.Resources
+import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
-import android.util.AttributeSet
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.WebView
-import android.widget.FrameLayout
 import androidx.compose.ui.platform.ComposeView
 import androidx.media3.ui.SubtitleView
 import com.github.tvbox.osc.R
@@ -23,29 +23,32 @@ import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.state.LockVisibility
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.player.state.PlayState
-import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.player.state.VideoSizeGate
-import com.github.tvbox.osc.player.ui.PlayerOverlay
+import com.github.tvbox.osc.player.ui.PlayerSurfaceHost
 import com.github.tvbox.osc.player.ui.VideoGestureHandler
 import com.github.tvbox.osc.player.usecase.M3u8PurifyUseCase
 import com.github.tvbox.osc.player.usecase.PlayerSwitchUseCase
 import com.github.tvbox.osc.player.usecase.WebParseUseCase
 import com.github.tvbox.osc.subtitle.widget.SimpleSubtitleView
-import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.util.DanmuHelper
-import com.github.tvbox.osc.util.SubtitleHelper
+import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
+import com.github.tvbox.osc.util.SubtitleHelper
 import org.greenrobot.eventbus.EventBus
 import org.json.JSONObject
 import java.util.HashMap
 
+/**
+ * 播放器控制器：纯 Kotlin 实现，不再继承 View。
+ *
+ * 整个 UI 树由 [composeHost] 这一个 ComposeView 承载；字幕 / 歌词 / media3 字幕这三个
+ * 必须保留的原生 View 改由 Compose 的 AndroidView 桥接，见 [PlayerSurfaceHost]。
+ * 因此控制器不再参与 View 树的 addView，挂载交给 [AppPlayerView.setVideoController]。
+ */
 @Suppress("MemberVisibilityCanBePrivate")
-class ComposeVideoController @JvmOverloads constructor(
-    context: Context,
-    attrs: AttributeSet? = null,
-    defStyleAttr: Int = 0,
-) : FrameLayout(context, attrs, defStyleAttr),
-    AppPlayerView.VideoControllerHost,
+class VideoPlayerController(
+    val context: Context,
+) : AppPlayerView.VideoControllerHost,
     PlayerControlApi {
 
     companion object {
@@ -53,10 +56,21 @@ class ComposeVideoController @JvmOverloads constructor(
         private const val LOCK_HIDE_DELAY_MS = 3000L
     }
 
-    internal lateinit var state: PlayerUiState
+    internal val state: PlayerUiState = PlayerUiState()
 
     val playerView: MyVideoView?
         get() = videoView
+
+    val resources: Resources
+        get() = context.resources
+
+    /**
+     * 由 Compose 宿主回填的尺寸。
+     * 手势层用它把滑动位移换算成进度 / 亮度 / 音量，替代原先 View.width / View.height。
+     */
+    internal var width: Int = 0
+
+    internal var height: Int = 0
 
     private var activityCache: Activity? = null
 
@@ -129,7 +143,7 @@ class ComposeVideoController @JvmOverloads constructor(
         view?.setVideoController(this)
     }
 
-    private lateinit var gestureActions: VideoGestureActionsImpl
+    internal lateinit var gestureActions: VideoGestureActionsImpl
 
     internal lateinit var gestureHandler: VideoGestureHandler
 
@@ -141,9 +155,19 @@ class ComposeVideoController @JvmOverloads constructor(
     private var enableInNormal = false
     private var gestureSwitch = true
 
-    private lateinit var mSubtitleView: SimpleSubtitleView
-    private lateinit var mLyricView: SimpleSubtitleView
-    private lateinit var mExoSubtitleView: SubtitleView
+    internal lateinit var subtitleView: SimpleSubtitleView
+        private set
+    internal lateinit var lyricView: SimpleSubtitleView
+        private set
+    internal lateinit var exoSubtitleView: SubtitleView
+        private set
+
+    /**
+     * 唯一的原生 View 宿主：内部 setContent 出整棵 Compose UI 树。
+     * 由 [controllerView] 交给 AppPlayerView 挂到播放器容器上。
+     */
+    internal lateinit var composeHost: ComposeView
+        private set
 
     internal val videoSizeGate = VideoSizeGate()
 
@@ -188,15 +212,13 @@ class ComposeVideoController @JvmOverloads constructor(
     private val webParseUseCase by lazy { WebParseUseCase() }
 
     init {
-        state = PlayerUiState()
-
         gestureActions = VideoGestureActionsImpl(this)
         gestureHandler = VideoGestureHandler(gestureActions)
         actions = PlayerActionsDelegate(this)
         config = PlayerConfigDelegate(this)
 
         initNativeSubtitleViews()
-        initComposeLayer()
+        initComposeHost()
 
         state.sysTimeVisible = false
         state.isPortrait =
@@ -206,61 +228,82 @@ class ComposeVideoController @JvmOverloads constructor(
         initSubtitleInfo()
     }
 
+    /**
+     * 字幕 / 歌词 / media3 字幕只创建实例，不再 addView。
+     * 它们由 [PlayerSurfaceHost] 里的 AndroidView 负责挂载与摆放。
+     *
+     * 注意：layoutParams 必须在这里声明。AndroidView 的宿主是按子 View 自身的
+     * layoutParams 摆放的，若不声明则退化为 WRAP_CONTENT，单行字幕会贴左而不是居中、
+     * media3 字幕的底距定位也会失准。
+     */
     private fun initNativeSubtitleViews() {
         val vs5 = resources.getDimensionPixelSize(R.dimen.vs_5)
         val vs15 = resources.getDimensionPixelSize(R.dimen.vs_15)
         val vs20 = resources.getDimensionPixelSize(R.dimen.vs_20)
 
-        mSubtitleView = SimpleSubtitleView(context).apply {
+        subtitleView = SimpleSubtitleView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
             gravity = Gravity.CENTER
             setTextColor(0xFFFFFFFF.toInt())
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
             setPadding(vs20, vs15, vs20, vs15)
             visibility = View.VISIBLE
         }
-        addView(
-            mSubtitleView,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM),
-        )
 
-        mExoSubtitleView = SubtitleView(context).apply { visibility = View.GONE }
-        addView(mExoSubtitleView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        exoSubtitleView = SubtitleView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            visibility = View.GONE
+        }
 
-        mLyricView = SimpleSubtitleView(context).apply {
+        lyricView = SimpleSubtitleView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
             gravity = Gravity.CENTER
             setTextColor(0xFF00FF00.toInt())
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
             textScaleX = 1.1f
             setPadding(vs5, vs20, vs5, vs20)
             visibility = View.GONE
         }
-        addView(mLyricView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, Gravity.CENTER))
     }
 
-    private fun initComposeLayer() {
-        val composeView = ComposeView(context).apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+    private fun initComposeHost() {
+        composeHost = ComposeView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            // 替代原先 View.onDetachedFromWindow 的清理时机：宿主摘除即停掉所有 Handler 任务。
+            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) = Unit
+
+                override fun onViewDetachedFromWindow(v: View) = onHostDetached()
+            })
             setContent {
-                AVBoxTheme(manageStatusBarIcons = false) {
-                    PlayerOverlay(
-                        state = state,
-                        actions = actions,
-                        gestureHandler = gestureHandler,
-                        gestureSession = { w, h, sw, y -> gestureActions.beginSession(w, h, sw, y) },
-                        onTapPending = { onGestureTapPending() },
-                    )
-                }
+                PlayerSurfaceHost(this@VideoPlayerController)
             }
         }
-        addView(composeView)
     }
 
-    private fun initSubtitleInfo() {
-        mSubtitleView.setTextSize(SubtitleHelper.getTextSize(playerActivity()).toFloat())
+    override fun controllerView(): View = composeHost
+
+    /** Compose 宿主尺寸变化时回填，并同步横竖屏状态。 */
+    internal fun onHostSizeChanged(w: Int, h: Int) {
+        width = w
+        height = h
+        initOrientationState()
     }
 
-    override fun onDetachedFromWindow() {
-        super.onDetachedFromWindow()
+    /** 对应原 View.onDetachedFromWindow：宿主被摘除时清理挂起的回调。 */
+    internal fun onHostDetached() {
         uiHandler.removeCallbacks(progressRunnable)
         progressTicking = false
         uiHandler.removeCallbacks(idleHideRunnable)
@@ -268,6 +311,10 @@ class ComposeVideoController @JvmOverloads constructor(
         actions.cancelKeySeekCommit()
         config.cancelSpeedRetry()
         uiHandler.removeCallbacks(tapConfirmRunnable)
+    }
+
+    private fun initSubtitleInfo() {
+        subtitleView.setTextSize(SubtitleHelper.getTextSize(playerActivity()).toFloat())
     }
 
     override fun setPlayState(playState: PlayState) {
@@ -291,11 +338,6 @@ class ComposeVideoController @JvmOverloads constructor(
             startProgress()
         }
         PlayState.PAUSED -> {
-            if (!state.lifecyclePaused) {
-                state.topLeftVisible = false
-                state.netSpeedTopRightVisible = false
-                if (state.controlsVisible) actions.hideBottom()
-            }
             savePlaybackProgress(notifyHistory = true)
         }
         PlayState.ERROR -> listener?.errReplay()
@@ -434,11 +476,6 @@ class ComposeVideoController @JvmOverloads constructor(
         }
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        initOrientationState()
-    }
-
     private fun initOrientationState() {
         val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         state.isPortrait = isPortrait
@@ -461,11 +498,11 @@ class ComposeVideoController @JvmOverloads constructor(
 
     override fun getUiState(): PlayerUiState = state
 
-    override fun getSubtitleView(): SimpleSubtitleView = mSubtitleView
+    override fun getSubtitleView(): SimpleSubtitleView = subtitleView
 
-    override fun getLyricView(): SimpleSubtitleView = mLyricView
+    override fun getLyricView(): SimpleSubtitleView = lyricView
 
-    override fun getExoSubtitleView(): SubtitleView = mExoSubtitleView
+    override fun getExoSubtitleView(): SubtitleView = exoSubtitleView
 
     override fun setListener(l: VodControlListener?) {
         listener = l
