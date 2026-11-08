@@ -39,7 +39,6 @@
 1. 本软件代码以 **GNU Affero General Public License v3.0（AGPL-3.0）** 开源，源代码及许可证详见仓库根目录 `LICENSE` 文件。
 2. 本软件基于以下上游项目开发，相关权利归原作者所有：
    - [TVBoxOS](https://github.com/q215613905/TVBoxOS)
-   - [FongMi/TV](https://github.com/FongMi/TV)
 3. 基于本软件进行二次开发或分发时，必须遵守 AGPL-3.0 许可证条款，保留原始版权声明和出处链接，并以相同许可证公开衍生作品的源代码。
 4. 本软件名称、Logo 及相关标识的权利归项目开发者所有，未经授权不得用于商业宣传或误导性使用。
 
