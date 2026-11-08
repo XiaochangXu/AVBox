@@ -84,4 +84,7 @@
 <p align="center">
   <img src="images/5.jpg" alt="首页"/>
   <br/><sub>宽屏首页</sub>
+<p align="center">
+  <img src="images/6.jpg" alt="首页"/>
+  <br/><sub>桌面端首页（仅支持 py 和 md5 格式的源）</sub>
 </p>
