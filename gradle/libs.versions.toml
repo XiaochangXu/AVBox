@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.0"
+agp = "9.5.1"
 chaquopy = "17.2.0"
 compileSdk = "37"
 ndk = "27.2.12479018"
